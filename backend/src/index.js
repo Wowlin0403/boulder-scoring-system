@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const { authMiddleware } = require('./middleware/auth');
 
 const app = express();
@@ -16,6 +17,12 @@ app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: '伺服器錯誤' });
 });
+
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.join(__dirname, '../../frontend/dist');
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
+}
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Backend running on http://localhost:${PORT}`));
