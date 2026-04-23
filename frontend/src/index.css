@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #0a0c10;
+  color: #dde6f0;
+  font-family: 'Barlow', sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root { min-height: 100vh; }
+
+input[type=text], input[type=number], input[type=password], input[type=date], select {
+  width: 100%;
+  background: #1f2433;
+  border: 1px solid #252d3d;
+  color: #dde6f0;
+  padding: 9px 12px;
+  font-family: 'Barlow', sans-serif;
+  font-size: 14px;
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+input:focus, select:focus { border-color: #c8f135; }
+select option { background: #1f2433; }
+
+input[type=number]::-webkit-inner-spin-button { opacity: 0.5; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #111318; }
+::-webkit-scrollbar-thumb { background: #252d3d; border-radius: 3px; }

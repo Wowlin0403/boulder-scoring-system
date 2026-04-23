@@ -1,0 +1,73 @@
+import { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import Layout from '../components/Layout';
+import { eventsAPI } from '../api';
+import { useToast } from '../components/Toast';
+
+const ROUND_KEYS = ['qual', 'semi', 'final'];
+const ROUND_NAMES = { qual: '資格賽', semi: '半決賽', final: '決賽' };
+
+export default function Export() {
+  const { id } = useParams();
+  const toast = useToast();
+  const [event, setEvent] = useState(null);
+  const [round, setRound] = useState('qual');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => { eventsAPI.get(id).then(r => setEvent(r.data)); }, [id]);
+
+  const handleExport = async () => {
+    setLoading(true);
+    try {
+      const res = await eventsAPI.exportCSV(id, round);
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `成績_${ROUND_NAMES[round]}_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('CSV 已匯出');
+    } catch {
+      toast('匯出失敗', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!event) return <Layout><div className="text-txt3 font-mono py-16 text-center">載入中...</div></Layout>;
+
+  const rounds = ROUND_KEYS.slice(0, event.rounds);
+
+  return (
+    <Layout>
+      <div className="flex items-center gap-2 mb-6 text-txt3 font-mono text-xs">
+        <Link to="/events" className="hover:text-txt transition-colors">比賽列表</Link>
+        <span>/</span>
+        <Link to={`/events/${id}`} className="hover:text-txt transition-colors">{event.name}</Link>
+        <span>/</span>
+        <span className="text-txt">匯出成績</span>
+      </div>
+
+      <div className="bg-s1 border border-border rounded-lg p-8 max-w-md">
+        <div className="font-condensed font-bold text-sm tracking-widest uppercase text-lime mb-6">匯出 CSV</div>
+        <div className="mb-5">
+          <label className="block font-mono text-[10px] tracking-widest uppercase text-txt3 mb-1.5">選擇輪次</label>
+          <select value={round} onChange={e => setRound(e.target.value)}>
+            {rounds.map(r => <option key={r} value={r}>{ROUND_NAMES[r]}</option>)}
+          </select>
+        </div>
+        <p className="text-txt3 font-mono text-xs mb-5">
+          檔案格式：UTF-8 with BOM，可直接用 Excel 開啟中文不亂碼。<br />
+          欄位：名次、號碼牌、姓名、組別、TOP數、ZONE數、嘗試次數。
+        </p>
+        <button
+          onClick={handleExport}
+          disabled={loading}
+          className="border border-cyan/30 text-cyan font-condensed font-bold text-xs tracking-widest uppercase px-6 py-3 rounded hover:bg-cyan hover:text-bg transition-colors disabled:opacity-50"
+        >
+          {loading ? '匯出中...' : '↓ 下載 CSV'}
+        </button>
+      </div>
+    </Layout>
+  );
+}

@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>公開排名預覽</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;700;900&family=Barlow:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:     #0d0d0f;
+    --s1:     #141417;
+    --s2:     #1a1a1e;
+    --s3:     #242428;
+    --border: #2a2a2e;
+    --border2: #3a3a3e;
+    --txt:    #e8e8ec;
+    --txt2:   #9898a8;
+    --txt3:   #5a5a6a;
+    --lime:   #c8f135;
+    --cyan:   #38e8d5;
+    --gold:   #f5c842;
+    --silver: #b0b8c8;
+    --bronze: #cd7c3a;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--txt);
+    font-family: 'Barlow', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  .header { border-bottom: 1px solid var(--border); padding: 16px 24px; }
+  .header-inner {
+    max-width: 960px; margin: 0 auto;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  }
+  .event-name {
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 900; font-size: 28px;
+    letter-spacing: 0.05em; color: var(--lime); line-height: 1;
+  }
+  .event-sub {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    color: var(--txt3); letter-spacing: 0.2em; margin-top: 4px;
+  }
+  .tabs { display: flex; gap: 4px; }
+  .tab-btn {
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 13px;
+    letter-spacing: 0.12em; text-transform: uppercase; padding: 7px 16px;
+    border-radius: 6px; border: 1px solid var(--border2); color: var(--txt2);
+    background: transparent; cursor: pointer; transition: all 0.15s;
+  }
+  .tab-btn:hover { border-color: var(--txt2); color: var(--txt); }
+  .tab-btn.active { background: var(--lime); color: var(--bg); border-color: var(--lime); }
+  .status { display: flex; align-items: center; gap: 12px; }
+  .status-text { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--txt3); text-align: right; line-height: 1.6; }
+  .refresh-btn {
+    font-family: 'JetBrains Mono', monospace; font-size: 13px; padding: 7px 12px;
+    border: 1px solid var(--border2); border-radius: 6px; color: var(--txt2);
+    background: transparent; cursor: pointer; transition: all 0.15s;
+  }
+  .refresh-btn:hover { border-color: var(--txt2); color: var(--txt); }
+
+  /* ── Category tab bar ── */
+  .cat-bar { border-bottom: 1px solid var(--border); padding: 0 24px; }
+  .cat-bar-inner { max-width: 960px; margin: 0 auto; display: flex; }
+  .cat-tab {
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 13px;
+    letter-spacing: 0.12em; text-transform: uppercase; padding: 12px 20px;
+    border: none; border-bottom: 3px solid transparent; background: transparent;
+    color: var(--txt3); cursor: pointer; transition: all 0.15s;
+    display: flex; align-items: center; gap: 8px; margin-bottom: -1px;
+  }
+  .cat-tab:hover { color: var(--txt2); }
+  .cat-tab.active { color: var(--txt); }
+  .cat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── Content ── */
+  .content { flex: 1; padding: 24px 16px; }
+  .content-inner { max-width: 960px; margin: 0 auto; }
+  .cat-section { display: none; }
+  .cat-section.visible { display: block; }
+
+  /* ── Athlete row ── */
+  .athlete-list { display: flex; flex-direction: column; gap: 0; }
+  .athlete-row {
+    display: flex; align-items: center; gap: 20px;
+    padding: 14px 20px; border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+    transition: background 0.1s;
+  }
+  .athlete-row:last-child { border-bottom: none; }
+  .athlete-row:hover { background: color-mix(in srgb, var(--s2) 60%, transparent); }
+  .athlete-wrap {
+    background: var(--s1); border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+  }
+
+  /* Rank */
+  .rank-col {
+    font-family: 'JetBrains Mono', monospace; font-weight: 700;
+    font-size: 22px; color: var(--txt); width: 36px; text-align: center; flex-shrink: 0;
+  }
+
+  /* Identity */
+  .identity { flex: 1; min-width: 0; }
+  .athlete-name { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .athlete-bib { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--txt3); margin-top: 2px; }
+
+  /* Boulder cards */
+  .boulder-cards { display: flex; gap: 5px; align-items: flex-end; flex-shrink: 0; }
+  .boulder-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .boulder-card {
+    width: 36px; height: 54px; border-radius: 6px; overflow: hidden;
+    display: flex; flex-direction: column; border: 1px solid var(--border2);
+  }
+  .card-top, .card-zone {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 12px;
+  }
+  .card-top  { border-bottom: 1px solid var(--border2); }
+
+  /* States */
+  .card-top.topped  { background: var(--lime); color: var(--bg); border-bottom-color: color-mix(in srgb, var(--lime) 60%, black); }
+  .card-zone.zoned  { background: color-mix(in srgb, var(--cyan) 25%, var(--s3)); color: var(--cyan); }
+  .card-top.empty   { background: transparent; color: transparent; }
+  .card-zone.empty  { background: transparent; color: transparent; }
+
+  .boulder-num {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px;
+    color: var(--txt3); letter-spacing: 0.05em;
+  }
+
+  /* Score */
+  .score-col {
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+    font-size: 26px; color: var(--txt); width: 72px; text-align: right; flex-shrink: 0;
+    letter-spacing: 0.02em;
+  }
+  .score-col.no-score { font-size: 16px; color: var(--txt3); }
+
+  /* ── Footer ── */
+  .footer {
+    border-top: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
+    padding: 12px 24px; text-align: center;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    color: color-mix(in srgb, var(--txt3) 40%, transparent); letter-spacing: 0.2em;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-inner">
+    <div>
+      <div class="event-name">2025 台北抱石公開賽</div>
+      <div class="event-sub">即時排名</div>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" onclick="setRound('qual',this)">資格賽</button>
+      <button class="tab-btn" onclick="setRound('semi',this)">半決賽</button>
+      <button class="tab-btn" onclick="setRound('final',this)">決賽</button>
+    </div>
+    <div class="status">
+      <div class="status-text">
+        <div>更新 <span id="updated-time">--:--:--</span></div>
+        <div><span id="countdown">30</span>s 後刷新</div>
+      </div>
+      <button class="refresh-btn" onclick="doRefresh()">↻</button>
+    </div>
+  </div>
+</div>
+
+<!-- Category tabs -->
+<div class="cat-bar">
+  <div class="cat-bar-inner">
+    <button class="cat-tab active" data-cat="male" onclick="setCat('male',this)" style="border-bottom-color:#c8f135;">
+      <div class="cat-dot" style="background:#c8f135;"></div>男子公開組
+    </button>
+    <button class="cat-tab" data-cat="female" onclick="setCat('female',this)">
+      <div class="cat-dot" style="background:#38e8d5;"></div>女子公開組
+    </button>
+  </div>
+</div>
+
+<!-- Content -->
+<div class="content">
+  <div class="content-inner">
+
+    <div class="cat-section visible" id="cat-male">
+      <div class="athlete-wrap">
+        <div class="athlete-list" id="list-male"></div>
+      </div>
+    </div>
+
+    <div class="cat-section" id="cat-female">
+      <div class="athlete-wrap">
+        <div class="athlete-list" id="list-female"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="footer">IFSC BOULDER SCORING</div>
+
+<script>
+  // ── Data ──────────────────────────────────────────────────────
+  // boulder: { top: attempts|0, zone: attempts|0 }  (0 = not achieved)
+  const DATA = {
+    male: [
+      { rank:1, bib:'M001', name:'陳威廷', boulders:[{top:1,zone:1},{top:1,zone:1},{top:1,zone:1},{top:3,zone:3},{top:0,zone:2}] },
+      { rank:2, bib:'M007', name:'林志豪', boulders:[{top:1,zone:1},{top:2,zone:1},{top:1,zone:1},{top:3,zone:3},{top:0,zone:0}] },
+      { rank:3, bib:'M003', name:'王大明', boulders:[{top:1,zone:1},{top:1,zone:1},{top:3,zone:2},{top:0,zone:2},{top:0,zone:0}] },
+      { rank:4, bib:'M012', name:'黃建偉', boulders:[{top:2,zone:1},{top:1,zone:1},{top:0,zone:1},{top:0,zone:3},{top:0,zone:0}] },
+      { rank:5, bib:'M005', name:'張志遠', boulders:[{top:1,zone:1},{top:0,zone:2},{top:0,zone:1},{top:0,zone:0},{top:0,zone:0}] },
+      { rank:6, bib:'M009', name:'劉明哲', boulders:[{top:3,zone:2},{top:0,zone:0},{top:0,zone:2},{top:0,zone:0},{top:0,zone:0}] },
+    ],
+    female: [
+      { rank:1, bib:'F002', name:'張雅婷', boulders:[{top:1,zone:1},{top:1,zone:1},{top:1,zone:1},{top:2,zone:2},{top:0,zone:1}] },
+      { rank:2, bib:'F008', name:'李美惠', boulders:[{top:1,zone:1},{top:1,zone:1},{top:2,zone:1},{top:0,zone:2},{top:0,zone:0}] },
+      { rank:3, bib:'F011', name:'吳佳玲', boulders:[{top:1,zone:1},{top:3,zone:2},{top:1,zone:1},{top:0,zone:1},{top:0,zone:0}] },
+      { rank:4, bib:'F004', name:'蔡依芸', boulders:[{top:2,zone:1},{top:1,zone:1},{top:0,zone:1},{top:0,zone:0},{top:0,zone:0}] },
+      { rank:5, bib:'F006', name:'鄭筱雯', boulders:[{top:1,zone:1},{top:0,zone:2},{top:0,zone:0},{top:0,zone:0},{top:0,zone:0}] },
+      { rank:6, bib:'F010', name:'洪佩君', boulders:[{top:3,zone:3},{top:0,zone:0},{top:0,zone:0},{top:0,zone:0},{top:0,zone:0}] },
+    ],
+  };
+
+  // ── Score formula ─────────────────────────────────────────────
+  // TOP = 25 - 0.1*(attempts-1); ZONE only = 10 - 0.1*(attempts-1)
+  function calcScore(boulders) {
+    return boulders.reduce((sum, b) => {
+      if (b.top > 0) return sum + (25 - 0.1 * (b.top - 1));
+      if (b.zone > 0) return sum + (10 - 0.1 * (b.zone - 1));
+      return sum;
+    }, 0);
+  }
+
+  // ── Render ────────────────────────────────────────────────────
+  function renderCard(b, num) {
+    const topped = b.top > 0;
+    const zoned  = b.zone > 0;
+    return `
+      <div class="boulder-col">
+        <div class="boulder-card">
+          <div class="card-top ${topped ? 'topped' : 'empty'}">${topped ? b.top : ''}</div>
+          <div class="card-zone ${zoned ? 'zoned' : 'empty'}">${zoned ? b.zone : ''}</div>
+        </div>
+        <div class="boulder-num">${num}</div>
+      </div>`;
+  }
+
+  function renderList(catKey) {
+    const list = DATA[catKey];
+    const el = document.getElementById('list-' + catKey);
+    el.innerHTML = list.map(a => {
+      const score = calcScore(a.boulders);
+      const hasScore = score > 0;
+      const scoreStr = hasScore ? score.toFixed(1) : '—';
+      const cards = a.boulders.map((b, i) => renderCard(b, i + 1)).join('');
+      return `
+        <div class="athlete-row">
+          <div class="rank-col">${a.rank}</div>
+          <div class="identity">
+            <div class="athlete-name">${a.name}</div>
+            <div class="athlete-bib">${a.bib}</div>
+          </div>
+          <div class="boulder-cards">${cards}</div>
+          <div class="score-col ${hasScore ? '' : 'no-score'}">${scoreStr}</div>
+        </div>`;
+    }).join('');
+  }
+
+  renderList('male');
+  renderList('female');
+
+  // ── Controls ──────────────────────────────────────────────────
+  const CAT_COLORS = { male: '#c8f135', female: '#38e8d5' };
+  let countdown = 30;
+
+  function fmt(d) {
+    return d.toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false });
+  }
+  function doRefresh() {
+    document.getElementById('updated-time').textContent = fmt(new Date());
+    countdown = 30;
+    document.getElementById('countdown').textContent = 30;
+  }
+  function setRound(r, btn) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    doRefresh();
+  }
+  function setCat(cat, btn) {
+    document.querySelectorAll('.cat-section').forEach(s => s.classList.remove('visible'));
+    document.getElementById('cat-' + cat).classList.add('visible');
+    document.querySelectorAll('.cat-tab').forEach(t => {
+      t.classList.remove('active');
+      t.style.borderBottomColor = 'transparent';
+    });
+    btn.classList.add('active');
+    btn.style.borderBottomColor = CAT_COLORS[cat] || 'var(--lime)';
+  }
+
+  doRefresh();
+  setInterval(() => {
+    countdown--;
+    if (countdown <= 0) { doRefresh(); return; }
+    document.getElementById('countdown').textContent = countdown;
+  }, 1000);
+</script>
+</body>
+</html>

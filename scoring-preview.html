@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>計分介面預覽</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@300;400;500&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0a0c10; --s1:#111318; --s2:#181c24; --s3:#1f2433;
+  --border:#252d3d; --border2:#2e3a50;
+  --lime:#c8f135; --cyan:#38e8d5;
+  --txt:#dde6f0; --txt2:#7a8fa8; --txt3:#4a5a6e;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--txt); font-family: 'Barlow', sans-serif; padding: 24px; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+  max-width: 1100px;
+}
+
+.card {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 標題 */
+.card-header { display: flex; align-items: center; gap: 8px; }
+.dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--txt3); flex-shrink: 0;
+}
+.card-label {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700; font-size: 17px;
+  letter-spacing: 3px; text-transform: uppercase;
+}
+
+/* 成績顯示 */
+.score-display { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.score-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px;
+}
+.score-row + .score-row { border-top: 1px solid var(--border); }
+.score-key {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700; font-size: 11px;
+  letter-spacing: 2px; text-transform: uppercase;
+}
+.score-val { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px; }
+
+/* 動作按鈕 */
+.action-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btn-action {
+  padding: 11px 4px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 900; font-size: 14px;
+  letter-spacing: 2px; text-transform: uppercase;
+  border-radius: 5px; border: 1px solid var(--border2);
+  background: var(--s3); color: var(--txt2);
+  cursor: pointer; -webkit-appearance: none;
+}
+
+/* 嘗試次數 */
+.attempts-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--txt3);
+  margin-bottom: 6px;
+}
+.attempts-row { display: grid; grid-template-columns: 1fr 50px; gap: 8px; }
+.attempts-input {
+  background: var(--s3); border: 1px solid var(--border);
+  color: var(--txt); padding: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px; font-weight: 700; text-align: center;
+  border-radius: 5px; outline: none; width: 100%;
+  -webkit-appearance: none; -moz-appearance: textfield;
+}
+.btn-plus {
+  background: var(--s3); border: 1px solid var(--border2);
+  color: var(--txt); font-size: 22px; font-weight: 700;
+  border-radius: 5px; cursor: pointer;
+  -webkit-appearance: none;
+  width: 50px; height: 46px;
+}
+.btn-plus:active { opacity: 0.7; }
+
+/* 重設按鈕 */
+.btn-reset {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700; font-size: 10px;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--txt3); background: transparent;
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 3px 8px; cursor: pointer;
+  -webkit-appearance: none;
+}
+.btn-reset:hover { border-color: var(--txt3); color: var(--txt2); }
+
+/* 確認 Modal */
+#modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6); z-index: 900;
+  align-items: center; justify-content: center;
+}
+#modal-overlay.open { display: flex; }
+#modal-box {
+  background: var(--s1); border: 1px solid var(--border2);
+  border-radius: 8px; padding: 28px 24px;
+  max-width: 320px; width: 90%; text-align: center;
+}
+#modal-msg {
+  font-size: 15px; color: var(--txt); line-height: 1.6;
+  margin-bottom: 20px;
+}
+.modal-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btn-confirm {
+  padding: 10px; border-radius: 5px; cursor: pointer;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700; font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase;
+  -webkit-appearance: none;
+  background: var(--lime); color: #0a0c10; border: none;
+}
+.btn-cancel {
+  padding: 10px; border-radius: 5px; cursor: pointer;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700; font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase;
+  -webkit-appearance: none;
+  background: transparent; color: var(--txt2);
+  border: 1px solid var(--border2);
+}
+
+/* 通知 */
+#notice {
+  display: none; position: fixed; bottom: 24px; right: 24px;
+  background: #f5c542; color: #0a0c10;
+  font-family: 'Barlow Condensed', sans-serif; font-weight: 700;
+  font-size: 14px; letter-spacing: 1px;
+  padding: 12px 20px; border-radius: 5px;
+  max-width: 320px; z-index: 999;
+}
+</style>
+</head>
+<body>
+
+<div style="margin-bottom:16px;font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:2px;color:var(--txt3);text-transform:uppercase;">
+  計分介面預覽
+</div>
+
+<div class="grid" id="cards"></div>
+<div id="notice"></div>
+
+<div id="modal-overlay">
+  <div id="modal-box">
+    <div id="modal-msg">確認要重設選手此路線的成績？</div>
+    <div class="modal-btns">
+      <button class="btn-confirm" onclick="modalConfirm()">確認</button>
+      <button class="btn-cancel" onclick="modalCancel()">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const boulders = [
+  { id: 1, label: 'B1' },
+  { id: 2, label: 'B2' },
+  { id: 3, label: 'B3' },
+  { id: 4, label: 'B4' },
+  { id: 5, label: 'B5' },
+];
+
+// state 獨立於 DOM，render 每次從 state 重建
+const state = {};
+boulders.forEach(b => {
+  state[b.id] = { top: false, topAtt: 0, zone: false, zoneAtt: 0, attempts: 0 };
+});
+
+// 每次 render 前先收集所有 input 的當前值存回 state
+function syncInputs() {
+  boulders.forEach(b => {
+    const el = document.getElementById('att-' + b.id);
+    if (el) state[b.id].attempts = Math.max(0, parseInt(el.value) || 0);
+  });
+}
+
+function render() {
+  document.getElementById('cards').innerHTML = boulders.map(b => {
+    const s = state[b.id];
+
+    const dotColor = s.top ? 'var(--lime)' : s.zone ? 'var(--cyan)' : 'var(--txt3)';
+    const topRowBg = s.top ? 'background:rgba(200,241,53,0.1)' : '';
+    const zoneRowBg = s.zone ? 'background:rgba(56,232,213,0.1)' : '';
+    const topKeyColor = s.top ? 'color:var(--lime)' : 'color:var(--txt3)';
+    const zoneKeyColor = s.zone ? 'color:var(--cyan)' : 'color:var(--txt3)';
+    const topValColor = s.top ? 'color:var(--lime)' : 'color:var(--txt3)';
+    const zoneValColor = s.zone ? 'color:var(--cyan)' : 'color:var(--txt3)';
+    const canAct = s.attempts > 0;
+    const topBtnStyle = s.top
+      ? 'background:var(--lime);color:#0a0c10;border-color:var(--lime)'
+      : canAct
+      ? 'background:var(--s3);color:var(--txt2);border-color:var(--border2)'
+      : 'background:var(--s3);color:var(--txt3);border-color:var(--border);opacity:0.4;cursor:not-allowed';
+    const zoneBtnStyle = s.zone
+      ? 'background:var(--cyan);color:#0a0c10;border-color:var(--cyan)'
+      : canAct
+      ? 'background:var(--s3);color:var(--txt2);border-color:var(--border2)'
+      : 'background:var(--s3);color:var(--txt3);border-color:var(--border);opacity:0.4;cursor:not-allowed';
+    const topDisabled = (!s.top && !canAct) ? 'disabled' : '';
+    const zoneDisabled = (!s.zone && !canAct) ? 'disabled' : '';
+
+    return `
+    <div class="card">
+      <div class="card-header" style="justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="dot" style="background:${dotColor}"></div>
+          <div class="card-label">${b.label}</div>
+        </div>
+        <button class="btn-reset" onclick="askReset(${b.id})">重設</button>
+      </div>
+
+      <div class="score-display">
+        <div class="score-row" style="${topRowBg}">
+          <span class="score-key" style="${topKeyColor}">TOP</span>
+          <span class="score-val" style="${topValColor}">${s.top ? s.topAtt + ' 次' : '—'}</span>
+        </div>
+        <div class="score-row" style="${zoneRowBg}">
+          <span class="score-key" style="${zoneKeyColor}">ZONE</span>
+          <span class="score-val" style="${zoneValColor}">${s.zone ? s.zoneAtt + ' 次' : '—'}</span>
+        </div>
+      </div>
+
+      <div class="action-btns">
+        <button class="btn-action" style="${topBtnStyle}" onclick="hitTop(${b.id})" ${topDisabled}>TOP</button>
+        <button class="btn-action" style="${zoneBtnStyle}" onclick="hitZone(${b.id})" ${zoneDisabled}>ZONE</button>
+      </div>
+
+      <div>
+        <div class="attempts-label">嘗試次數</div>
+        <div class="attempts-row">
+          <input class="attempts-input" type="number" min="0"
+            id="att-${b.id}" value="${s.attempts}">
+          <button class="btn-plus" onclick="plusAtt(${b.id})">+</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function hitTop(id) {
+  syncInputs();
+  const s = state[id];
+  const cur = s.attempts;
+  s.top = true;
+  s.topAtt = s.top && s.topAtt > 0 ? Math.min(s.topAtt, cur) : cur;
+  // TOP 不可低於 ZONE；若 ZONE 未記錄，自動補上
+  if (!s.zone) {
+    s.zone = true;
+    s.zoneAtt = s.topAtt;
+    showNotice('選手無 ZONE 點嘗試次數，成績將同為 TOP 嘗試次數。');
+  }
+  render();
+}
+
+function hitZone(id) {
+  syncInputs();
+  const s = state[id];
+  const cur = s.attempts;
+  if (!s.zone) {
+    s.zone = true; s.zoneAtt = cur;
+  } else {
+    s.zoneAtt = Math.min(s.zoneAtt, cur);
+  }
+  render();
+}
+
+function plusAtt(id) {
+  syncInputs(); // 先同步手動輸入的值，再 +1
+  state[id].attempts++;
+  render();
+}
+
+let pendingResetId = null;
+
+function askReset(id) {
+  pendingResetId = id;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function modalConfirm() {
+  if (pendingResetId !== null) {
+    state[pendingResetId] = { top: false, topAtt: 0, zone: false, zoneAtt: 0, attempts: 0 };
+    pendingResetId = null;
+  }
+  document.getElementById('modal-overlay').classList.remove('open');
+  render();
+}
+function modalCancel() {
+  pendingResetId = null;
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+let noticeTimer = null;
+function showNotice(msg) {
+  const el = document.getElementById('notice');
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => { el.style.display = 'none'; }, 3500);
+}
+
+render();
+</script>
+</body>
+</html>
