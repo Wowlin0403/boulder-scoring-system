@@ -29,8 +29,8 @@ export default function Login() {
     <div className="min-h-screen bg-bg flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-10">
-          <div className="font-condensed font-black text-3xl tracking-widest uppercase text-lime mb-1">BLOC</div>
-          <div className="font-mono text-xs tracking-widest text-txt3 uppercase">IFSC Scoring System</div>
+          <div className="font-condensed font-black text-3xl tracking-widest uppercase text-lime mb-1">BOULDER SCORE SYSTEM</div>
+          <div className="font-mono text-xs tracking-widest text-txt3 uppercase">Design by W.C.</div>
         </div>
 
         <form onSubmit={handleSubmit} className="bg-s1 border border-border rounded-lg p-8 space-y-5">
@@ -65,7 +65,6 @@ export default function Login() {
           </button>
         </form>
 
-        <p className="text-center font-mono text-xs text-txt3 mt-4">預設帳號：admin / admin1234</p>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { ToastContainer } from './components/Toast';
 import Login from './pages/Login';
 import Events from './pages/Events';
 import EventDetail from './pages/EventDetail';
+import CategoryDetail from './pages/CategoryDetail';
 import Setup from './pages/Setup';
 import Athletes from './pages/Athletes';
 import Scoring from './pages/Scoring';
@@ -27,11 +28,12 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/events" element={<PrivateRoute><Events /></PrivateRoute>} />
           <Route path="/events/:id" element={<PrivateRoute><EventDetail /></PrivateRoute>} />
-          <Route path="/events/:id/setup" element={<PrivateRoute adminOnly><Setup /></PrivateRoute>} />
-          <Route path="/events/:id/athletes" element={<PrivateRoute adminOnly><Athletes /></PrivateRoute>} />
-          <Route path="/events/:id/scoring" element={<PrivateRoute><Scoring /></PrivateRoute>} />
-          <Route path="/events/:id/ranking" element={<PrivateRoute><Ranking /></PrivateRoute>} />
-          <Route path="/events/:id/export" element={<PrivateRoute adminOnly><Export /></PrivateRoute>} />
+          <Route path="/events/:id/categories/:catId" element={<PrivateRoute><CategoryDetail /></PrivateRoute>} />
+          <Route path="/events/:id/categories/:catId/setup" element={<PrivateRoute adminOnly><Setup /></PrivateRoute>} />
+          <Route path="/events/:id/categories/:catId/athletes" element={<PrivateRoute adminOnly><Athletes /></PrivateRoute>} />
+          <Route path="/events/:id/categories/:catId/scoring" element={<PrivateRoute><Scoring /></PrivateRoute>} />
+          <Route path="/events/:id/categories/:catId/ranking" element={<PrivateRoute><Ranking /></PrivateRoute>} />
+          <Route path="/events/:id/categories/:catId/export" element={<PrivateRoute adminOnly><Export /></PrivateRoute>} />
           <Route path="/public/:id/ranking" element={<PublicRanking />} />
           <Route path="*" element={<Navigate to="/events" replace />} />
         </Routes>

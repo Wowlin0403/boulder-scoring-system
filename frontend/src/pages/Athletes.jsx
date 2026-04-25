@@ -19,8 +19,8 @@ function parseCSV(text, categories) {
   }).filter(r => r.name || r.bib);
 }
 
-function downloadTemplate() {
-  const csv = '﻿姓名,號碼牌,組別\n陳威廷,M001,男子公開組\n張雅婷,F001,女子公開組\n';
+function downloadTemplate(catName) {
+  const csv = `﻿姓名,號碼牌,組別\n陳威廷,M001,${catName}\n張雅婷,F001,${catName}\n`;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
   a.download = '選手名單範本.csv';
@@ -28,15 +28,15 @@ function downloadTemplate() {
 }
 
 export default function Athletes() {
-  const { id } = useParams();
+  const { id, catId } = useParams();
   const toast = useToast();
   const fileRef = useRef();
   const [event, setEvent] = useState(null);
+  const [category, setCategory] = useState(null);
   const [athletes, setAthletes] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [filter, setFilter] = useState('all');
-  const [form, setForm] = useState({ name: '', bib: '', category_id: '' });
-  const [importPreview, setImportPreview] = useState(null); // parsed rows
+  const [form, setForm] = useState({ name: '', bib: '' });
+  const [importPreview, setImportPreview] = useState(null);
   const [importing, setImporting] = useState(false);
 
   const load = async () => {
@@ -46,25 +46,36 @@ export default function Athletes() {
       eventsAPI.getCategories(id),
     ]);
     setEvent(ev.data);
-    setAthletes(al.data);
     setCategories(cl.data);
-    if (!form.category_id && cl.data.length > 0) {
-      setForm(f => ({ ...f, category_id: String(cl.data[0].id) }));
-    }
+    const found = cl.data.find(c => String(c.id) === String(catId));
+    setCategory(found || null);
+    setAthletes(al.data.filter(a => String(a.category_id) === String(catId)));
   };
 
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { load(); }, [id, catId]);
 
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!form.name.trim() || !form.bib.trim()) return toast('請填寫姓名與號碼牌', 'error');
     try {
-      await eventsAPI.createAthlete(id, { ...form, category_id: form.category_id ? +form.category_id : null });
-      setForm(f => ({ ...f, name: '', bib: '' }));
+      await eventsAPI.createAthlete(id, { ...form, category_id: +catId });
+      setForm({ name: '', bib: '' });
       await load();
       toast(`${form.name} 已新增`);
     } catch (err) {
       toast(err.response?.data?.error || '新增失敗', 'error');
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    if (!confirm(`確認要清除「${category?.name}」的全部選手資料？此操作無法復原。`)) return;
+    try {
+      const toDelete = athletes.map(a => a.id);
+      await Promise.all(toDelete.map(athId => eventsAPI.deleteAthlete(id, athId)));
+      await load();
+      toast('已清除該組別全部選手');
+    } catch {
+      toast('清除失敗', 'error');
     }
   };
 
@@ -98,7 +109,9 @@ export default function Athletes() {
     setImporting(true);
     try {
       const res = await eventsAPI.bulkImportAthletes(id, validRows.map(r => ({
-        name: r.name, bib: r.bib, category_id: r.category_id,
+        name: r.name,
+        bib: r.bib,
+        category_id: r.category_id || +catId,
       })));
       await load();
       setImportPreview(null);
@@ -117,9 +130,8 @@ export default function Athletes() {
 
   const validCount = importPreview?.filter(r => r.errors.length === 0).length ?? 0;
   const errorCount = importPreview?.filter(r => r.errors.length > 0).length ?? 0;
-  const displayed = filter === 'all' ? athletes : athletes.filter(a => String(a.category_id) === filter);
 
-  if (!event) return <Layout><div className="text-txt3 font-mono py-16 text-center">載入中...</div></Layout>;
+  if (!event || !category) return <Layout><div className="text-txt3 font-mono py-16 text-center">載入中...</div></Layout>;
 
   return (
     <Layout>
@@ -127,6 +139,8 @@ export default function Athletes() {
         <Link to="/events" className="hover:text-txt transition-colors">比賽列表</Link>
         <span>/</span>
         <Link to={`/events/${id}`} className="hover:text-txt transition-colors">{event.name}</Link>
+        <span>/</span>
+        <Link to={`/events/${id}/categories/${catId}`} className="hover:text-txt transition-colors">{category.name}</Link>
         <span>/</span>
         <span className="text-txt">選手名單</span>
       </div>
@@ -143,12 +157,6 @@ export default function Athletes() {
             <label className="block font-mono text-[10px] tracking-widest uppercase text-txt3 mb-1.5">號碼牌</label>
             <input type="text" value={form.bib} onChange={e => setForm(f => ({ ...f, bib: e.target.value }))} placeholder="A001" />
           </div>
-          <div className="flex-1 min-w-32">
-            <label className="block font-mono text-[10px] tracking-widest uppercase text-txt3 mb-1.5">組別</label>
-            <select value={form.category_id} onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
           <div className="flex items-end">
             <button type="submit" className="bg-lime text-bg font-condensed font-bold text-xs tracking-widest uppercase px-5 py-[9px] rounded hover:bg-[#b5de25] transition-colors whitespace-nowrap">
               新增
@@ -162,7 +170,7 @@ export default function Athletes() {
         <div className="flex items-center justify-between mb-4">
           <div className="font-condensed font-bold text-sm tracking-widest uppercase text-lime">批次匯入 CSV</div>
           <button
-            onClick={downloadTemplate}
+            onClick={() => downloadTemplate(category.name)}
             className="border border-border2 text-txt2 font-condensed font-bold text-xs tracking-widest uppercase px-4 py-1.5 rounded hover:border-txt2 hover:text-txt transition-colors"
           >
             ↓ 下載範本
@@ -180,13 +188,11 @@ export default function Athletes() {
           </button>
         ) : (
           <>
-            {/* 預覽統計 */}
             <div className="flex gap-3 mb-4 text-xs font-mono">
               <span className="text-lime">✓ {validCount} 筆可匯入</span>
               {errorCount > 0 && <span className="text-red">✗ {errorCount} 筆有錯誤</span>}
             </div>
 
-            {/* 預覽表格 */}
             <div className="overflow-x-auto mb-4 max-h-72 overflow-y-auto border border-border rounded">
               <table className="w-full text-sm border-collapse">
                 <thead className="sticky top-0 bg-s2">
@@ -208,7 +214,7 @@ export default function Athletes() {
                         ) : r.categoryName ? (
                           <span className="text-red">{r.categoryName}</span>
                         ) : (
-                          <span className="text-txt3">—</span>
+                          <span className="text-txt3">{category.name}</span>
                         )}
                       </td>
                       <td className="py-2 px-3">
@@ -223,7 +229,6 @@ export default function Athletes() {
               </table>
             </div>
 
-            {/* 操作按鈕 */}
             <div className="flex gap-3">
               <button
                 onClick={handleImport}
@@ -233,7 +238,7 @@ export default function Athletes() {
                 {importing ? '匯入中...' : `確認匯入（${validCount} 筆）`}
               </button>
               <button
-                onClick={() => { setImportPreview(null); }}
+                onClick={() => setImportPreview(null)}
                 className="border border-border2 text-txt2 font-condensed font-bold text-xs tracking-widest uppercase px-5 py-2 rounded hover:border-txt2 transition-colors"
               >
                 取消
@@ -253,41 +258,33 @@ export default function Athletes() {
       <div className="bg-s1 border border-border rounded-lg p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="font-condensed font-bold text-sm tracking-widest uppercase text-lime">
-            選手名單 <span className="text-txt3 font-mono text-xs font-normal ml-2">{displayed.length} 人</span>
+            選手名單 <span className="text-txt3 font-mono text-xs font-normal ml-2">{athletes.length} 人</span>
           </div>
-          <select value={filter} onChange={e => setFilter(e.target.value)} className="w-auto min-w-28">
-            <option value="all">全部組別</option>
-            {categories.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
-          </select>
+          <button
+            onClick={handleDeleteAll}
+            className="border border-red/30 text-red font-condensed font-bold text-xs tracking-widest uppercase px-3 py-[7px] rounded hover:bg-red hover:text-white transition-colors"
+          >
+            全部清除
+          </button>
         </div>
 
-        {displayed.length === 0 ? (
+        {athletes.length === 0 ? (
           <div className="text-txt3 font-mono text-center py-12">尚無選手</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr>
-                  {['號碼', '姓名', '組別', ''].map(h => (
+                  {['號碼', '姓名', ''].map(h => (
                     <th key={h} className="font-mono text-[9px] tracking-widest uppercase text-txt3 py-2 px-3 text-left border-b border-border">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {displayed.map(a => (
+                {athletes.map(a => (
                   <tr key={a.id} className="hover:bg-s2 transition-colors">
                     <td className="py-2.5 px-3 font-mono text-xs text-txt3">{a.bib}</td>
                     <td className="py-2.5 px-3 font-bold text-txt">{a.name}</td>
-                    <td className="py-2.5 px-3">
-                      {a.category_name ? (
-                        <span
-                          className="font-condensed font-bold text-xs tracking-widest uppercase px-2 py-0.5 rounded border"
-                          style={{ color: a.category_color, borderColor: `${a.category_color}40`, background: `${a.category_color}15` }}
-                        >
-                          {a.category_name}
-                        </span>
-                      ) : <span className="text-txt3">—</span>}
-                    </td>
                     <td className="py-2.5 px-3 text-right">
                       <button
                         onClick={() => handleDelete(a.id, a.name)}

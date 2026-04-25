@@ -32,8 +32,8 @@ export const eventsAPI = {
   get: (id) => api.get(`/events/${id}`),
   update: (id, data) => api.put(`/events/${id}`, data),
   delete: (id) => api.delete(`/events/${id}`),
-  getBoulders: (id, round) => api.get(`/events/${id}/boulders/${round}`),
-  resizeBoulders: (id, round, count) => api.put(`/events/${id}/boulders/${round}/resize`, { count }),
+  getBoulders: (id, round, categoryId) => api.get(`/events/${id}/boulders/${round}`, { params: { category_id: categoryId } }),
+  resizeBoulders: (id, round, count, categoryId) => api.put(`/events/${id}/boulders/${round}/resize`, { count, category_id: categoryId }),
   updateBoulder: (id, bId, data) => api.put(`/events/${id}/boulders/${bId}`, data),
   getCategories: (id) => api.get(`/events/${id}/categories`),
   createCategory: (id, data) => api.post(`/events/${id}/categories`, data),
@@ -42,11 +42,13 @@ export const eventsAPI = {
   getAthletes: (id, params) => api.get(`/events/${id}/athletes`, { params }),
   createAthlete: (id, data) => api.post(`/events/${id}/athletes`, data),
   deleteAthlete: (id, athId) => api.delete(`/events/${id}/athletes/${athId}`),
+  deleteAllAthletes: (id) => api.delete(`/events/${id}/athletes`),
   bulkImportAthletes: (id, athletes) => api.post(`/events/${id}/athletes/bulk`, { athletes }),
   getScores: (id, round) => api.get(`/events/${id}/scores/${round}`),
   saveScores: (id, data) => api.post(`/events/${id}/scores`, data),
+  saveAttempt: (id, data) => api.put(`/events/${id}/scores/attempt`, data),
   getRanking: (id, round) => api.get(`/events/${id}/ranking/${round}`),
-  exportCSV: (id, round) => api.get(`/events/${id}/export/${round}`, { responseType: 'blob' }),
+  exportCSV: (id, round, categoryId) => api.get(`/events/${id}/export/${round}`, { params: { category_id: categoryId }, responseType: 'blob' }),
 };
 
 const publicApi = axios.create({

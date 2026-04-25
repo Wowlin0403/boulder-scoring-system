@@ -4,26 +4,34 @@ import Layout from '../components/Layout';
 import { eventsAPI } from '../api';
 import { useToast } from '../components/Toast';
 
-const ROUND_KEYS = ['qual', 'semi', 'final'];
 const ROUND_NAMES = { qual: '資格賽', semi: '半決賽', final: '決賽' };
+const getRounds = (n) => n === 2 ? ['qual', 'final'] : ['qual', 'semi', 'final'].slice(0, n);
 
 export default function Export() {
-  const { id } = useParams();
+  const { id, catId } = useParams();
   const toast = useToast();
   const [event, setEvent] = useState(null);
+  const [category, setCategory] = useState(null);
   const [round, setRound] = useState('qual');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { eventsAPI.get(id).then(r => setEvent(r.data)); }, [id]);
+  useEffect(() => {
+    Promise.all([eventsAPI.get(id), eventsAPI.getCategories(id)]).then(([ev, cl]) => {
+      setEvent(ev.data);
+      const found = cl.data.find(c => String(c.id) === String(catId));
+      setCategory(found || null);
+      if (found) setRound(getRounds(found.rounds)[0]);
+    });
+  }, [id, catId]);
 
   const handleExport = async () => {
     setLoading(true);
     try {
-      const res = await eventsAPI.exportCSV(id, round);
+      const res = await eventsAPI.exportCSV(id, round, catId);
       const url = URL.createObjectURL(res.data);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `成績_${ROUND_NAMES[round]}_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `成績_${category?.name}_${ROUND_NAMES[round]}_${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
       URL.revokeObjectURL(url);
       toast('CSV 已匯出');
@@ -34,9 +42,9 @@ export default function Export() {
     }
   };
 
-  if (!event) return <Layout><div className="text-txt3 font-mono py-16 text-center">載入中...</div></Layout>;
+  if (!event || !category) return <Layout><div className="text-txt3 font-mono py-16 text-center">載入中...</div></Layout>;
 
-  const rounds = ROUND_KEYS.slice(0, event.rounds);
+  const rounds = getRounds(category.rounds);
 
   return (
     <Layout>
@@ -44,6 +52,8 @@ export default function Export() {
         <Link to="/events" className="hover:text-txt transition-colors">比賽列表</Link>
         <span>/</span>
         <Link to={`/events/${id}`} className="hover:text-txt transition-colors">{event.name}</Link>
+        <span>/</span>
+        <Link to={`/events/${id}/categories/${catId}`} className="hover:text-txt transition-colors">{category.name}</Link>
         <span>/</span>
         <span className="text-txt">匯出成績</span>
       </div>

@@ -15,7 +15,7 @@ export default function Layout({ children }) {
     <div className="min-h-screen flex flex-col">
       <header className="bg-s1 border-b border-border px-7 h-14 flex items-center justify-between sticky top-0 z-50">
         <Link to="/events" className="font-condensed font-black text-xl tracking-widest uppercase text-lime">
-          BLOC <sub className="text-[10px] tracking-widest text-txt3 font-mono font-normal align-middle ml-2">IFSC SCORING</sub>
+          BOULDER SCORE SYSTEM <sub className="text-[10px] tracking-widest text-txt3 font-mono font-normal align-middle ml-2">Design by W.C.</sub>
         </Link>
         <div className="flex items-center gap-4">
           <span className="font-mono text-xs text-txt3">{user?.username}</span>

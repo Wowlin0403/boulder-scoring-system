@@ -2,37 +2,44 @@ const router = require('express').Router();
 const db = require('../db');
 const { adminOnly } = require('../middleware/auth');
 const { getAdvancedIds } = require('../utils/advancement');
+const { makeCmp, assignRanks, computeRoundRankMap } = require('../utils/ranking');
 
 const ROUND_KEYS = ['qual', 'semi', 'final'];
+
+function getRounds(n) {
+  if (n === 2) return ['qual', 'final'];
+  return ['qual', 'semi', 'final'].slice(0, n);
+}
+
+function createCategoryBoulders(eventId, categoryId, rounds) {
+  const insert = db.prepare('INSERT OR IGNORE INTO boulders (event_id, category_id, round, number, label) VALUES (?, ?, ?, ?, ?)');
+  getRounds(rounds).forEach(round => {
+    for (let i = 1; i <= 5; i++) insert.run(eventId, categoryId, round, i, `B${i}`);
+  });
+}
+
+const ATHLETE_SELECT = `
+  SELECT a.*, c.name as category_name, c.color as category_color, c.rounds as category_rounds
+  FROM athletes a LEFT JOIN categories c ON a.category_id = c.id
+`;
 
 // ── Events ──────────────────────────────────────────────────────────────────
 
 router.get('/', (req, res) => {
-  const events = db.prepare('SELECT * FROM events ORDER BY date DESC, id DESC').all();
-  res.json(events);
+  res.json(db.prepare('SELECT * FROM events ORDER BY date DESC, id DESC').all());
 });
 
 router.post('/', adminOnly, (req, res) => {
-  const { name, date, rounds = 1 } = req.body;
+  const { name, date } = req.body;
   if (!name || !date) return res.status(400).json({ error: '名稱與日期必填' });
 
-  const result = db.prepare(
-    'INSERT INTO events (name, date, rounds, created_by) VALUES (?, ?, ?, ?)'
-  ).run(name, date, rounds, req.user.id);
+  const eventId = db.prepare('INSERT INTO events (name, date) VALUES (?, ?)').run(name, date).lastInsertRowid;
 
-  const eventId = result.lastInsertRowid;
-
-  // 每個啟用的輪次預設建立 5 題
-  const insertBoulder = db.prepare('INSERT INTO boulders (event_id, round, number, label) VALUES (?, ?, ?, ?)');
-  ROUND_KEYS.slice(0, rounds).forEach(round => {
-    for (let i = 1; i <= 5; i++) {
-      insertBoulder.run(eventId, round, i, `B${i}`);
-    }
+  const insertCat = db.prepare('INSERT INTO categories (event_id, name, color, rounds) VALUES (?, ?, ?, ?)');
+  [{ name: '男子公開組', color: '#c8f135' }, { name: '女子公開組', color: '#38e8d5' }].forEach(c => {
+    const catId = insertCat.run(eventId, c.name, c.color, 1).lastInsertRowid;
+    createCategoryBoulders(eventId, catId, 1);
   });
-
-  // 預設兩組別
-  db.prepare('INSERT INTO categories (event_id, name, color) VALUES (?, ?, ?)').run(eventId, '男子公開組', '#c8f135');
-  db.prepare('INSERT INTO categories (event_id, name, color) VALUES (?, ?, ?)').run(eventId, '女子公開組', '#38e8d5');
 
   res.status(201).json(db.prepare('SELECT * FROM events WHERE id = ?').get(eventId));
 });
@@ -44,75 +51,49 @@ router.get('/:id', (req, res) => {
 });
 
 router.put('/:id', adminOnly, (req, res) => {
-  const { name, date, rounds } = req.body;
+  const { name, date } = req.body;
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: '賽事不存在' });
-
-  const newRounds = rounds ?? event.rounds;
-  db.prepare('UPDATE events SET name=?, date=?, rounds=? WHERE id=?').run(
-    name ?? event.name,
-    date ?? event.date,
-    newRounds,
-    req.params.id
-  );
-
-  // 若輪次增加，補建新輪次的預設 5 題
-  if (newRounds > event.rounds) {
-    const insertBoulder = db.prepare('INSERT OR IGNORE INTO boulders (event_id, round, number, label) VALUES (?, ?, ?, ?)');
-    ROUND_KEYS.slice(event.rounds, newRounds).forEach(round => {
-      for (let i = 1; i <= 5; i++) {
-        insertBoulder.run(req.params.id, round, i, `B${i}`);
-      }
-    });
-  }
-
+  db.prepare('UPDATE events SET name=?, date=? WHERE id=?').run(name ?? event.name, date ?? event.date, req.params.id);
   res.json(db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id));
 });
 
 router.delete('/:id', adminOnly, (req, res) => {
-  const event = db.prepare('SELECT id FROM events WHERE id = ?').get(req.params.id);
-  if (!event) return res.status(404).json({ error: '賽事不存在' });
+  if (!db.prepare('SELECT id FROM events WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: '賽事不存在' });
   db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
-// ── Boulders（per round）────────────────────────────────────────────────────
+// ── Boulders（per category per round）────────────────────────────────────────
 
-// 取得某輪次的路線
 router.get('/:id/boulders/:round', (req, res) => {
   const { id, round } = req.params;
+  const { category_id } = req.query;
   if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
-  const boulders = db.prepare('SELECT * FROM boulders WHERE event_id = ? AND round = ? ORDER BY number').all(id, round);
-  res.json(boulders);
+  if (!category_id) return res.status(400).json({ error: '需提供 category_id' });
+  res.json(db.prepare('SELECT * FROM boulders WHERE category_id = ? AND round = ? ORDER BY number').all(category_id, round));
 });
 
-// 調整某輪次的路線數（重設該輪次所有路線）
 router.put('/:id/boulders/:round/resize', adminOnly, (req, res) => {
   const { id, round } = req.params;
-  const { count } = req.body;
+  const { count, category_id } = req.body;
   if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
   if (!count || count < 1 || count > 10) return res.status(400).json({ error: '路線數需介於 1–10' });
+  if (!category_id) return res.status(400).json({ error: '需提供 category_id' });
 
-  const existing = db.prepare('SELECT * FROM boulders WHERE event_id = ? AND round = ? ORDER BY number').all(id, round);
+  const existing = db.prepare('SELECT * FROM boulders WHERE category_id = ? AND round = ? ORDER BY number').all(category_id, round);
 
-  // 補充新路線
-  const insert = db.prepare('INSERT OR IGNORE INTO boulders (event_id, round, number, label) VALUES (?, ?, ?, ?)');
-  for (let i = existing.length + 1; i <= count; i++) {
-    insert.run(id, round, i, `B${i}`);
-  }
+  const insert = db.prepare('INSERT OR IGNORE INTO boulders (event_id, category_id, round, number, label) VALUES (?, ?, ?, ?, ?)');
+  for (let i = existing.length + 1; i <= count; i++) insert.run(id, category_id, round, i, `B${i}`);
 
-  // 刪除多餘路線（同步刪掉成績）
   if (existing.length > count) {
     const toDelete = existing.slice(count).map(b => b.id);
-    const ph = toDelete.map(() => '?').join(',');
-    db.prepare(`DELETE FROM boulders WHERE id IN (${ph})`).run(...toDelete);
+    db.prepare(`DELETE FROM boulders WHERE id IN (${toDelete.map(() => '?').join(',')})`).run(...toDelete);
   }
 
-  const boulders = db.prepare('SELECT * FROM boulders WHERE event_id = ? AND round = ? ORDER BY number').all(id, round);
-  res.json(boulders);
+  res.json(db.prepare('SELECT * FROM boulders WHERE category_id = ? AND round = ? ORDER BY number').all(category_id, round));
 });
 
-// 更新單一路線標籤
 router.put('/:id/boulders/:bId', adminOnly, (req, res) => {
   const { label } = req.body;
   if (!label) return res.status(400).json({ error: '標籤必填' });
@@ -127,17 +108,36 @@ router.get('/:id/categories', (req, res) => {
 });
 
 router.post('/:id/categories', adminOnly, (req, res) => {
-  const { name, color = '#c8f135' } = req.body;
+  const { name, color = '#c8f135', rounds = 1 } = req.body;
   if (!name) return res.status(400).json({ error: '組別名稱必填' });
-  const result = db.prepare('INSERT INTO categories (event_id, name, color) VALUES (?, ?, ?)').run(req.params.id, name, color);
-  res.status(201).json(db.prepare('SELECT * FROM categories WHERE id = ?').get(result.lastInsertRowid));
+  const catId = db.prepare('INSERT INTO categories (event_id, name, color, rounds) VALUES (?, ?, ?, ?)').run(req.params.id, name, color, rounds).lastInsertRowid;
+  createCategoryBoulders(req.params.id, catId, rounds);
+  res.status(201).json(db.prepare('SELECT * FROM categories WHERE id = ?').get(catId));
 });
 
 router.put('/:id/categories/:catId', adminOnly, (req, res) => {
-  const { semi_quota, final_quota } = req.body;
-  db.prepare('UPDATE categories SET semi_quota=?, final_quota=? WHERE id=? AND event_id=?').run(
-    semi_quota ?? 0, final_quota ?? 0, req.params.catId, req.params.id
+  const { semi_quota, final_quota, rounds } = req.body;
+  const cat = db.prepare('SELECT * FROM categories WHERE id = ? AND event_id = ?').get(req.params.catId, req.params.id);
+  if (!cat) return res.status(404).json({ error: '組別不存在' });
+
+  const newRounds = rounds ?? cat.rounds;
+  db.prepare('UPDATE categories SET semi_quota=?, final_quota=?, rounds=? WHERE id=? AND event_id=?').run(
+    semi_quota ?? cat.semi_quota ?? 0,
+    final_quota ?? cat.final_quota ?? 0,
+    newRounds,
+    req.params.catId,
+    req.params.id
   );
+
+  if (newRounds > cat.rounds) {
+    const added = getRounds(newRounds).filter(r => !getRounds(cat.rounds).includes(r));
+    const insert = db.prepare('INSERT OR IGNORE INTO boulders (event_id, category_id, round, number, label) VALUES (?, ?, ?, ?, ?)');
+    added.forEach(r => { for (let i = 1; i <= 5; i++) insert.run(req.params.id, req.params.catId, r, i, `B${i}`); });
+  } else if (newRounds < cat.rounds) {
+    const removed = getRounds(cat.rounds).filter(r => !getRounds(newRounds).includes(r));
+    removed.forEach(r => db.prepare('DELETE FROM boulders WHERE category_id = ? AND round = ?').run(req.params.catId, r));
+  }
+
   res.json(db.prepare('SELECT * FROM categories WHERE id = ?').get(req.params.catId));
 });
 
@@ -150,14 +150,9 @@ router.delete('/:id/categories/:catId', adminOnly, (req, res) => {
 
 router.get('/:id/athletes', (req, res) => {
   const { round } = req.query;
-  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
-  if (!event) return res.status(404).json({ error: '賽事不存在' });
+  if (!db.prepare('SELECT id FROM events WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: '賽事不存在' });
 
-  let athletes = db.prepare(`
-    SELECT a.*, c.name as category_name, c.color as category_color
-    FROM athletes a LEFT JOIN categories c ON a.category_id = c.id
-    WHERE a.event_id = ? ORDER BY a.bib
-  `).all(req.params.id);
+  let athletes = db.prepare(`${ATHLETE_SELECT} WHERE a.event_id = ? ORDER BY a.bib`).all(req.params.id);
 
   if (round && round !== 'qual') {
     const advancedIds = getAdvancedIds(db, req.params.id, round);
@@ -173,13 +168,13 @@ router.post('/:id/athletes', adminOnly, (req, res) => {
   if (db.prepare('SELECT id FROM athletes WHERE event_id = ? AND bib = ?').get(req.params.id, bib)) {
     return res.status(409).json({ error: '號碼牌已存在' });
   }
-  const result = db.prepare(
-    'INSERT INTO athletes (event_id, category_id, name, bib) VALUES (?, ?, ?, ?)'
-  ).run(req.params.id, category_id || null, name, bib);
-  res.status(201).json(db.prepare(`
-    SELECT a.*, c.name as category_name, c.color as category_color
-    FROM athletes a LEFT JOIN categories c ON a.category_id = c.id WHERE a.id = ?
-  `).get(result.lastInsertRowid));
+  const athId = db.prepare('INSERT INTO athletes (event_id, category_id, name, bib) VALUES (?, ?, ?, ?)').run(req.params.id, category_id || null, name, bib).lastInsertRowid;
+  res.status(201).json(db.prepare(`${ATHLETE_SELECT} WHERE a.id = ?`).get(athId));
+});
+
+router.delete('/:id/athletes', adminOnly, (req, res) => {
+  db.prepare('DELETE FROM athletes WHERE event_id = ?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 router.delete('/:id/athletes/:athId', adminOnly, (req, res) => {
@@ -246,84 +241,42 @@ router.post('/:id/scores', (req, res) => {
   res.json({ ok: true });
 });
 
+router.put('/:id/scores/attempt', (req, res) => {
+  const { athlete_id, round, boulder_id, attempts } = req.body;
+  if (!athlete_id || !round || !boulder_id || attempts === undefined) return res.status(400).json({ error: '資料格式錯誤' });
+  db.prepare(`
+    INSERT INTO scores (athlete_id, event_id, round, boulder_id, attempts, updated_at, updated_by)
+    VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+    ON CONFLICT(athlete_id, round, boulder_id) DO UPDATE SET
+      attempts=excluded.attempts, updated_at=excluded.updated_at
+  `).run(athlete_id, req.params.id, round, boulder_id, attempts, req.user.id);
+  res.json({ ok: true });
+});
+
 // ── Ranking ──────────────────────────────────────────────────────────────────
 
 router.get('/:id/ranking/:round', (req, res) => {
   const { id, round } = req.params;
   if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
 
-  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(id);
+  const catList = db.prepare('SELECT * FROM categories WHERE event_id = ?').all(id);
+  const activeCats = catList.filter(c => getRounds(c.rounds).includes(round));
+  const activeCatIds = new Set(activeCats.map(c => c.id));
 
-  let athletes = db.prepare(`
-    SELECT a.*, c.name as category_name, c.color as category_color
-    FROM athletes a LEFT JOIN categories c ON a.category_id = c.id
-    WHERE a.event_id = ? ORDER BY a.bib
-  `).all(id);
+  let athletes = db.prepare(`${ATHLETE_SELECT} WHERE a.event_id = ? ORDER BY a.bib`).all(id);
 
   if (round !== 'qual') {
     const advancedIds = getAdvancedIds(db, id, round);
     if (advancedIds) athletes = athletes.filter(a => advancedIds.has(a.id));
   }
 
-  const boulders = db.prepare('SELECT * FROM boulders WHERE event_id = ? AND round = ? ORDER BY number').all(id, round);
+  athletes = athletes.filter(a => a.category_id && activeCatIds.has(a.category_id));
 
-  const scoreMap = {};
-  db.prepare('SELECT * FROM scores WHERE event_id = ? AND round = ?').all(id, round).forEach(s => {
-    if (!scoreMap[s.athlete_id]) scoreMap[s.athlete_id] = {};
-    scoreMap[s.athlete_id][s.boulder_id] = s;
+  const bouldersMap = {};
+  activeCats.forEach(c => {
+    bouldersMap[c.id] = db.prepare('SELECT * FROM boulders WHERE category_id = ? AND round = ? ORDER BY number').all(c.id, round);
   });
 
-  const ranked = athletes.map(a => {
-    let tops = 0, zones = 0, tAtt = 0, zAtt = 0;
-    boulders.forEach(b => {
-      const s = scoreMap[a.id]?.[b.id];
-      if (!s) return;
-      if (s.top) { tops++; tAtt += s.top_attempts || 1; }
-      if (s.zone) { zones++; zAtt += s.zone_attempts || 1; }
-    });
-    return { ...a, tops, zones, tAtt, zAtt, scored: !!scoreMap[a.id] };
-  });
-
-  // IFSC 排名：以組別分組後各自排序
-  const byCategory = {};
-  ranked.forEach(a => {
-    const key = a.category_id || 'none';
-    if (!byCategory[key]) byCategory[key] = [];
-    byCategory[key].push(a);
-  });
-
-  const cmp = (a, b) => {
-    if (b.tops !== a.tops) return b.tops - a.tops;
-    if (b.zones !== a.zones) return b.zones - a.zones;
-    if (a.tAtt !== b.tAtt) return a.tAtt - b.tAtt;
-    return a.zAtt - b.zAtt;
-  };
-
-  const result = [];
-  Object.values(byCategory).forEach(group => {
-    group.sort(cmp).forEach((a, i) => result.push({ ...a, rank: i + 1 }));
-  });
-
-  const catList = db.prepare('SELECT * FROM categories WHERE event_id = ?').all(id);
-  const quotas = {};
-  const quotaField = round === 'qual' ? 'semi_quota' : round === 'semi' ? 'final_quota' : null;
-  if (quotaField) catList.forEach(c => { quotas[c.id] = c[quotaField] || 0; });
-  res.json({ athletes: result, boulders, total: athletes.length, scored: athletes.filter(a => scoreMap[a.id]).length, quotas });
-});
-
-// ── CSV Export ───────────────────────────────────────────────────────────────
-
-router.get('/:id/export/:round', adminOnly, (req, res) => {
-  const { id, round } = req.params;
-  const ROUND_NAMES = { qual: '資格賽', semi: '半決賽', final: '決賽' };
-  if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
-
-  const athletes = db.prepare(`
-    SELECT a.*, c.name as category_name FROM athletes a
-    LEFT JOIN categories c ON a.category_id = c.id WHERE a.event_id = ? ORDER BY a.bib
-  `).all(id);
-
-  const boulders = db.prepare('SELECT * FROM boulders WHERE event_id = ? AND round = ? ORDER BY number').all(id, round);
   const scoreMap = {};
   db.prepare('SELECT * FROM scores WHERE event_id = ? AND round = ?').all(id, round).forEach(s => {
     if (!scoreMap[s.athlete_id]) scoreMap[s.athlete_id] = {};
@@ -332,6 +285,75 @@ router.get('/:id/export/:round', adminOnly, (req, res) => {
 
   const byCategory = {};
   athletes.forEach(a => {
+    const key = a.category_id;
+    if (!byCategory[key]) byCategory[key] = [];
+    const boulders = bouldersMap[a.category_id] || [];
+    let tops = 0, zones = 0, tAtt = 0, zAtt = 0;
+    boulders.forEach(b => {
+      const s = scoreMap[a.id]?.[b.id];
+      if (!s) return;
+      if (s.top) { tops++; tAtt += s.top_attempts || 1; }
+      if (s.zone) { zones++; zAtt += s.zone_attempts || 1; }
+    });
+    byCategory[key].push({ ...a, tops, zones, tAtt, zAtt, scored: !!scoreMap[a.id] });
+  });
+
+  // Build prev-round rank maps per category for tiebreaking
+  const prevRankMaps = {};
+  activeCats.forEach(cat => {
+    const catRoundsArr = getRounds(cat.rounds);
+    const idx = catRoundsArr.indexOf(round);
+    if (idx > 0) {
+      prevRankMaps[cat.id] = computeRoundRankMap(db, id, cat.id, catRoundsArr[idx - 1], catRoundsArr);
+    }
+  });
+
+  const result = [];
+  Object.entries(byCategory).forEach(([catId, group]) => {
+    const cmp = makeCmp(prevRankMaps[catId] || null);
+    assignRanks(group, cmp);
+    group.forEach(a => result.push(a));
+  });
+
+  const quotas = {};
+  const quotaField = round === 'qual' ? 'semi_quota' : round === 'semi' ? 'final_quota' : null;
+  if (quotaField) catList.forEach(c => { quotas[c.id] = c[quotaField] || 0; });
+
+  res.json({ athletes: result, bouldersMap, total: athletes.length, scored: athletes.filter(a => scoreMap[a.id]).length, quotas });
+});
+
+// ── CSV Export ───────────────────────────────────────────────────────────────
+
+router.get('/:id/export/:round', adminOnly, (req, res) => {
+  const { id, round } = req.params;
+  const { category_id } = req.query;
+  const ROUND_NAMES = { qual: '資格賽', semi: '半決賽', final: '決賽' };
+  if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
+
+  const catList = db.prepare('SELECT * FROM categories WHERE event_id = ?').all(id);
+  const roundCats = catList.filter(c => getRounds(c.rounds).includes(round));
+  const activeCats = category_id ? roundCats.filter(c => String(c.id) === String(category_id)) : roundCats;
+  const activeCatIds = new Set(activeCats.map(c => c.id));
+
+  let athletes = db.prepare(`
+    SELECT a.*, c.name as category_name FROM athletes a
+    LEFT JOIN categories c ON a.category_id = c.id WHERE a.event_id = ? ORDER BY a.bib
+  `).all(id).filter(a => a.category_id && activeCatIds.has(a.category_id));
+
+  const bouldersMap = {};
+  activeCats.forEach(c => {
+    bouldersMap[c.id] = db.prepare('SELECT * FROM boulders WHERE category_id = ? AND round = ? ORDER BY number').all(c.id, round);
+  });
+
+  const scoreMap = {};
+  db.prepare('SELECT * FROM scores WHERE event_id = ? AND round = ?').all(id, round).forEach(s => {
+    if (!scoreMap[s.athlete_id]) scoreMap[s.athlete_id] = {};
+    scoreMap[s.athlete_id][s.boulder_id] = s;
+  });
+
+  const byCategory = {};
+  athletes.forEach(a => {
+    const boulders = bouldersMap[a.category_id] || [];
     let tops = 0, zones = 0, tAtt = 0, zAtt = 0;
     boulders.forEach(b => {
       const s = scoreMap[a.id]?.[b.id];
@@ -344,17 +366,21 @@ router.get('/:id/export/:round', adminOnly, (req, res) => {
     byCategory[key].push({ ...a, tops, zones, tAtt, zAtt });
   });
 
-  const cmp = (a, b) => {
-    if (b.tops !== a.tops) return b.tops - a.tops;
-    if (b.zones !== a.zones) return b.zones - a.zones;
-    if (a.tAtt !== b.tAtt) return a.tAtt - b.tAtt;
-    return a.zAtt - b.zAtt;
-  };
+  const exportPrevRankMaps = {};
+  activeCats.forEach(cat => {
+    const catRoundsArr = getRounds(cat.rounds);
+    const idx = catRoundsArr.indexOf(round);
+    if (idx > 0) {
+      exportPrevRankMaps[cat.id] = computeRoundRankMap(db, id, cat.id, catRoundsArr[idx - 1], catRoundsArr);
+    }
+  });
 
   const rows = [['名次', '號碼牌', '姓名', '組別', 'TOP數', 'ZONE數', 'TOP嘗試次數', 'ZONE嘗試次數']];
-  Object.values(byCategory).forEach(group => {
-    group.sort(cmp).forEach((a, i) => {
-      rows.push([i + 1, a.bib, a.name, a.category_name || '', a.tops, a.zones, a.tAtt, a.zAtt]);
+  Object.entries(byCategory).forEach(([catId, group]) => {
+    const cmp = makeCmp(exportPrevRankMaps[catId] || null);
+    assignRanks(group, cmp);
+    group.forEach(a => {
+      rows.push([a.rank, a.bib, a.name, a.category_name || '', a.tops, a.zones, a.tAtt, a.zAtt]);
     });
   });
 

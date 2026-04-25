@@ -5,12 +5,10 @@ import { eventsAPI } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 
-const ROUND_NAMES = { 1: '資格賽', 2: '資格賽+決賽', 3: '資格賽+半決賽+決賽' };
-
 export default function Events() {
   const [events, setEvents] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '', date: new Date().toISOString().slice(0, 10), num_boulders: 5, rounds: 1 });
+  const [form, setForm] = useState({ name: '', date: new Date().toISOString().slice(0, 10) });
   const [loading, setLoading] = useState(true);
   const { isAdmin } = useAuth();
   const toast = useToast();
@@ -75,18 +73,6 @@ export default function Events() {
               <label className="block font-mono text-[10px] tracking-widest uppercase text-txt3 mb-1.5">日期</label>
               <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} required />
             </div>
-            <div>
-              <label className="block font-mono text-[10px] tracking-widest uppercase text-txt3 mb-1.5">問題數</label>
-              <input type="number" value={form.num_boulders} onChange={e => setForm(f => ({ ...f, num_boulders: +e.target.value }))} min={1} max={10} required />
-            </div>
-            <div>
-              <label className="block font-mono text-[10px] tracking-widest uppercase text-txt3 mb-1.5">輪次</label>
-              <select value={form.rounds} onChange={e => setForm(f => ({ ...f, rounds: +e.target.value }))}>
-                <option value={1}>僅資格賽</option>
-                <option value={2}>資格賽 + 決賽</option>
-                <option value={3}>資格賽 + 半決賽 + 決賽</option>
-              </select>
-            </div>
           </div>
           <div className="flex gap-3 mt-4">
             <button type="submit" className="bg-lime text-bg font-condensed font-bold text-xs tracking-widest uppercase px-5 py-2 rounded hover:bg-[#b5de25] transition-colors">建立</button>
@@ -105,7 +91,7 @@ export default function Events() {
             <div key={ev.id} className="bg-s1 border border-border rounded-lg p-5 flex items-center justify-between hover:border-border2 transition-colors">
               <div>
                 <div className="font-condensed font-bold text-lg text-txt">{ev.name}</div>
-                <div className="font-mono text-xs text-txt3 mt-1">{ev.date} · {ev.num_boulders} 題 · {ROUND_NAMES[ev.rounds]}</div>
+                <div className="font-mono text-xs text-txt3 mt-1">{ev.date}</div>
               </div>
               <div className="flex gap-2">
                 <Link
