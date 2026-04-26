@@ -7,18 +7,22 @@ import { useToast } from '../components/Toast';
 
 export default function JudgeAccount() {
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, isSuperadmin } = useAuth();
   const toast = useToast();
   const [event, setEvent] = useState(null);
   const [judge, setJudge] = useState(null);
+  const [orgId, setOrgId] = useState(null);
   const [showPw, setShowPw] = useState(false);
   const [pwModal, setPwModal] = useState(false);
   const [newPw, setNewPw] = useState('');
 
   const load = async () => {
-    const [ev] = await Promise.all([eventsAPI.get(id)]);
+    const ev = await eventsAPI.get(id);
     setEvent(ev.data);
-    const jRes = await usersAPI.getJudge(user.id);
+    const resolvedOrgId = isSuperadmin ? ev.data.organizer_id : user.id;
+    setOrgId(resolvedOrgId);
+    if (!resolvedOrgId) return;
+    const jRes = await usersAPI.getJudge(resolvedOrgId);
     setJudge(jRes.data);
   };
 
@@ -27,7 +31,7 @@ export default function JudgeAccount() {
   const handleSetPw = async (e) => {
     e.preventDefault();
     try {
-      await usersAPI.setJudgePassword(user.id, newPw);
+      await usersAPI.setJudgePassword(orgId, newPw);
       toast('裁判密碼已更新');
       setPwModal(false);
       setNewPw('');
@@ -38,7 +42,7 @@ export default function JudgeAccount() {
 
   const handleToggleActive = async () => {
     try {
-      await usersAPI.toggleJudgeActive(user.id, !judge.active);
+      await usersAPI.toggleJudgeActive(orgId, !judge.active);
       toast(judge.active ? '裁判帳號已停用' : '裁判帳號已啟用');
       load();
     } catch {
@@ -46,7 +50,13 @@ export default function JudgeAccount() {
     }
   };
 
-  if (!event || !judge) return <Layout><div className="text-txt3 font-mono py-16 text-center">載入中...</div></Layout>;
+  if (!event) return <Layout><div className="text-txt3 font-mono py-16 text-center">載入中...</div></Layout>;
+  if (isSuperadmin && !event.organizer_id) return (
+    <Layout>
+      <div className="text-txt3 font-mono py-16 text-center text-sm">此比賽尚未指派主辦方，無法查看裁判帳號。</div>
+    </Layout>
+  );
+  if (!judge) return <Layout><div className="text-txt3 font-mono py-16 text-center">載入中...</div></Layout>;
 
   return (
     <Layout>

@@ -22,7 +22,7 @@ const ROUNDS_OPTIONS = [
 
 export default function EventDetail() {
   const { id } = useParams();
-  const { isAdmin, isOrganizer } = useAuth();
+  const { isAdmin, isOrganizer, isSuperadmin } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const [event, setEvent] = useState(null);
@@ -148,7 +148,7 @@ export default function EventDetail() {
         ))}
       </div>
 
-      {isOrganizer && (
+      {(isOrganizer || isSuperadmin) && (
         <Link to={`/events/${id}/judge-account`}
           className="flex items-center justify-between bg-s1 border border-border rounded-lg p-5 hover:border-cyan/50 transition-colors group">
           <div>
