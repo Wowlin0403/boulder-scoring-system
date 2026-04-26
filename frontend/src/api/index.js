@@ -72,5 +72,6 @@ export const usersAPI = {
   updateEvents: (id, event_ids) => api.put(`/users/${id}/events`, { event_ids }),
   getJudge: (id) => api.get(`/users/${id}/judge`),
   setJudgePassword: (id, password) => api.put(`/users/${id}/judge/password`, { password }),
+  changeMyPassword: (currentPassword, newPassword) => api.put('/users/self/change-password', { currentPassword, newPassword }),
   toggleJudgeActive: (id, active) => api.put(`/users/${id}/judge/active`, { active }),
 };

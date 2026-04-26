@@ -48,6 +48,20 @@ router.post('/', superadminOnly, (req, res) => {
   }
 });
 
+// ── 自己改密碼（所有角色） ────────────────────────────────────────────────────
+
+router.put('/self/change-password', (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: '請填寫目前密碼與新密碼' });
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!bcrypt.compareSync(currentPassword, user.password_hash))
+    return res.status(401).json({ error: '目前密碼錯誤' });
+
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(newPassword, 10), req.user.id);
+  res.json({ ok: true });
+});
+
 // 更新負責比賽
 router.put('/:id/events', superadminOnly, (req, res) => {
   const org = db.prepare("SELECT id FROM users WHERE id = ? AND role = 'organizer'").get(req.params.id);
