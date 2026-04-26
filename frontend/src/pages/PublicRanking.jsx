@@ -138,12 +138,7 @@ function AthleteRow({ a, boulders, compact, badge }) {
       {badge ? (
         <div className={`rounded-full flex items-center justify-center font-mono font-bold flex-shrink-0 ${
           compact ? 'w-7 h-7 text-xs' : 'w-8 h-8 text-sm'
-        } ${
-          a.rank === 1 ? 'bg-[#f5c542] text-[#0d0d0f]' :
-          a.rank === 2 ? 'bg-[#a8a8b8] text-[#0d0d0f]' :
-          a.rank === 3 ? 'bg-[#c87941] text-white' :
-          'bg-s3 text-txt3'
-        }`}>{a.rank}</div>
+        } bg-s3 text-txt3`}>{a.rank}</div>
       ) : (
         <div className="font-mono font-bold text-xl text-txt w-8 text-center flex-shrink-0">{a.rank}</div>
       )}
@@ -327,14 +322,22 @@ export default function PublicRanking() {
 
   // ── Render helpers ───────────────────────────────────────────────────
   const renderCarousel = () => {
-    const page = catAthletes.slice(safePage * pageSize, (safePage + 1) * pageSize);
+    const pageStart = safePage * pageSize;
+    const page = catAthletes.slice(pageStart, pageStart + pageSize);
     const padCount = pageSize - page.length;
+    const pageEnd = pageStart + page.length;
+
+    // 晉級線剛好落在本頁末尾時（quota === pageEnd），在 placeholder 前顯示，下一頁起始不再重複
+    const showCutoffAtEnd = cutoffRank !== null && quota < catAthletes.length && quota === pageEnd;
+
     return (
       <div>
         {page.map((a, li) => {
-          const gi = safePage * pageSize + li;
+          const gi = pageStart + li;
           const prevA = gi > 0 ? catAthletes[gi - 1] : null;
-          const showCutoff = cutoffRank !== null && a.rank > cutoffRank && (!prevA || prevA.rank <= cutoffRank);
+          // 若晉級線已在上一頁末尾顯示，本頁首位不重複
+          const skipBoundary = gi === quota && gi === pageStart;
+          const showCutoff = !skipBoundary && cutoffRank !== null && a.rank > cutoffRank && (!prevA || prevA.rank <= cutoffRank);
           return (
             <div key={a.id}>
               {showCutoff && <CutoffLine />}
@@ -342,6 +345,7 @@ export default function PublicRanking() {
             </div>
           );
         })}
+        {showCutoffAtEnd && <CutoffLine />}
         {Array.from({ length: padCount }, (_, i) => (
           <div key={`pad-${i}`} className="flex items-center gap-5 px-5 py-3.5 border-b border-border/30" style={{ visibility: 'hidden' }}>
             <div className="w-8 flex-shrink-0" />
