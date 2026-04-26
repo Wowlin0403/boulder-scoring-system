@@ -2,11 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --bg:      10 12 16;
+  --s1:      17 19 24;
+  --s2:      24 28 36;
+  --s3:      31 36 51;
+  --border:  37 45 61;
+  --border2: 46 58 80;
+  --theme:   200 241 53;
+  --cyan:    56 232 213;
+  --gold:    245 197 66;
+  --txt:     221 230 240;
+  --txt2:    122 143 168;
+  --txt3:    74 90 110;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  background: #0a0c10;
-  color: #dde6f0;
+  background: rgb(var(--bg));
+  color: rgb(var(--txt));
   font-family: 'Barlow', sans-serif;
   font-size: 14px;
   min-height: 100vh;
@@ -27,11 +42,11 @@ input[type=text], input[type=number], input[type=password], input[type=date], se
   outline: none;
   transition: border-color 0.15s;
 }
-input:focus, select:focus { border-color: #c8f135; }
-select option { background: #1f2433; }
+input:focus, select:focus { border-color: rgb(var(--theme)); }
+select option { background: rgb(var(--s3)); }
 
 input[type=number]::-webkit-inner-spin-button { opacity: 0.5; }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #111318; }
-::-webkit-scrollbar-thumb { background: #252d3d; border-radius: 3px; }
+::-webkit-scrollbar-track { background: rgb(var(--s1)); }
+::-webkit-scrollbar-thumb { background: rgb(var(--border)); border-radius: 3px; }
