@@ -3,13 +3,18 @@ function getRounds(n) {
   return ['qual', 'semi', 'final'].slice(0, n);
 }
 
-// Build a score comparator; prevRankMap breaks ties when scores are equal
+function calcScore(boulderScores) {
+  return boulderScores.reduce((sum, b) => {
+    if (b.top) return sum + (25 - 0.1 * ((b.top_attempts || 1) - 1));
+    if (b.zone) return sum + (10 - 0.1 * ((b.zone_attempts || 1) - 1));
+    return sum;
+  }, 0);
+}
+
+// Compare by score (desc); prevRankMap breaks exact ties
 function makeCmp(prevRankMap) {
   return (a, b) => {
-    if (b.tops !== a.tops) return b.tops - a.tops;
-    if (b.zones !== a.zones) return b.zones - a.zones;
-    if (a.tAtt !== b.tAtt) return a.tAtt - b.tAtt;
-    if (a.zAtt !== b.zAtt) return a.zAtt - b.zAtt;
+    if (Math.abs(b.score - a.score) > 1e-9) return b.score - a.score;
     if (prevRankMap) {
       const pa = prevRankMap[a.id] ?? null;
       const pb = prevRankMap[b.id] ?? null;
@@ -53,28 +58,20 @@ function computeRoundRankMap(db, eventId, catId, round, catRoundsArr) {
   });
 
   const data = athletes.map(a => {
-    let tops = 0, zones = 0, tAtt = 0, zAtt = 0;
-    boulders.forEach(b => {
+    const boulderScores = boulders.map(b => {
       const s = scoreMap[a.id]?.[b.id];
-      if (!s) return;
-      if (s.top) { tops++; tAtt += s.top_attempts || 1; }
-      if (s.zone) { zones++; zAtt += s.zone_attempts || 1; }
+      if (!s) return { top: 0, top_attempts: 0, zone: 0, zone_attempts: 0 };
+      return { top: s.top ? 1 : 0, top_attempts: s.top_attempts || 0, zone: s.zone ? 1 : 0, zone_attempts: s.zone_attempts || 0 };
     });
-    return { id: a.id, tops, zones, tAtt, zAtt };
+    return { id: a.id, score: calcScore(boulderScores) };
   });
 
   const cmp = makeCmp(prevRankMap);
-  data.sort(cmp);
+  assignRanks(data, cmp);
 
   const rankMap = {};
-  if (data.length > 0) {
-    rankMap[data[0].id] = 1;
-    for (let i = 1; i < data.length; i++) {
-      rankMap[data[i].id] = cmp(data[i], data[i - 1]) === 0 ? rankMap[data[i - 1].id] : i + 1;
-    }
-  }
-
+  data.forEach(a => { rankMap[a.id] = a.rank; });
   return rankMap;
 }
 
-module.exports = { getRounds, makeCmp, assignRanks, computeRoundRankMap };
+module.exports = { getRounds, calcScore, makeCmp, assignRanks, computeRoundRankMap };

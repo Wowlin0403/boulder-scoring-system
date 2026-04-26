@@ -179,14 +179,18 @@ export default function Scoring() {
 
   useEffect(() => {
     if (!catId) return;
-    eventsAPI.getAthletes(id, { round: selectedRound }).then(res => {
-      const catAthletes = res.data.filter(a => String(a.category_id) === String(catId));
-      setAthletes(catAthletes);
-      setSelectedAthlete(prev => {
-        if (!prev) return prev;
-        return catAthletes.find(a => String(a.id) === prev) ? prev : '';
+    if (selectedRound === 'qual') {
+      eventsAPI.getAthletes(id, { round: selectedRound }).then(res => {
+        const catAthletes = res.data.filter(a => String(a.category_id) === String(catId));
+        setAthletes(catAthletes);
+        setSelectedAthlete(prev => catAthletes.find(a => String(a.id) === prev) ? prev : '');
       });
-    });
+    } else {
+      eventsAPI.getStartOrder(id, catId, selectedRound).then(res => {
+        setAthletes(res.data);
+        setSelectedAthlete(prev => res.data.find(a => String(a.id) === prev) ? prev : '');
+      });
+    }
   }, [id, catId, selectedRound]);
 
   useEffect(() => {
@@ -335,7 +339,9 @@ export default function Scoring() {
           <select value={selectedAthlete} onChange={e => handleAthleteChange(e.target.value)}>
             <option value="">-- 選擇選手 --</option>
             {athletes.map(a => (
-              <option key={a.id} value={a.id}>[{a.bib}] {a.name}</option>
+              <option key={a.id} value={a.id}>
+                {selectedRound !== 'qual' ? `#${a.startOrder} ` : ''}[{a.bib}] {a.name}
+              </option>
             ))}
           </select>
         </div>

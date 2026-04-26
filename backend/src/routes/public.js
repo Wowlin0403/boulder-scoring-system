@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const db = require('../db');
 const { getAdvancedIds } = require('../utils/advancement');
-const { makeCmp, assignRanks, computeRoundRankMap } = require('../utils/ranking');
+const { calcScore, makeCmp, assignRanks, computeRoundRankMap } = require('../utils/ranking');
 
 const ROUND_KEYS = ['qual', 'semi', 'final'];
 
@@ -67,7 +67,7 @@ router.get('/events/:id/ranking/:round', (req, res) => {
       if (s.zone) { zones++; zAtt += s.zone_attempts || 1; }
       return { boulder_id: b.id, top: s.top ? 1 : 0, top_attempts: s.top_attempts || 0, zone: s.zone ? 1 : 0, zone_attempts: s.zone_attempts || 0 };
     });
-    byCategory[key].push({ ...a, tops, zones, tAtt, zAtt, scored: !!scoreMap[a.id], boulderScores });
+    byCategory[key].push({ ...a, tops, zones, tAtt, zAtt, scored: !!scoreMap[a.id], boulderScores, score: calcScore(boulderScores) });
   });
 
   const prevRankMaps = {};

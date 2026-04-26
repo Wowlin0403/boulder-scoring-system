@@ -8,17 +8,17 @@ router.post('/login', (req, res) => {
   if (!username || !password) return res.status(400).json({ error: '請輸入帳號與密碼' });
 
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || !bcrypt.compareSync(password, user.password_hash))
     return res.status(401).json({ error: '帳號或密碼錯誤' });
-  }
 
-  const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: '24h' }
-  );
+  if (!user.active)
+    return res.status(403).json({ error: '帳號已停用，請聯絡管理員' });
 
-  res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+  const payload = { id: user.id, username: user.username, role: user.role };
+  if (user.organizer_id) payload.organizer_id = user.organizer_id;
+
+  const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
+  res.json({ token, user: payload });
 });
 
 module.exports = router;

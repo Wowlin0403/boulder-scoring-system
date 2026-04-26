@@ -22,7 +22,7 @@ const ROUNDS_OPTIONS = [
 
 export default function EventDetail() {
   const { id } = useParams();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isOrganizer } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const [event, setEvent] = useState(null);
@@ -75,12 +75,45 @@ export default function EventDetail() {
       <div className="font-condensed font-black text-2xl tracking-widest uppercase text-lime mb-1">{event.name}</div>
       <div className="font-mono text-xs text-txt3 mb-6">{event.date}</div>
 
+      {isAdmin && (
+        <div className="bg-s1 border border-border rounded-lg p-6 mb-6">
+          <div className="font-condensed font-bold text-sm tracking-widest uppercase text-lime mb-4">新增組別</div>
+          <form onSubmit={handleAddCat} className="flex gap-3 flex-wrap items-end">
+            <div>
+              <label className="block font-mono text-[9px] tracking-widest uppercase text-txt3 mb-1">名稱</label>
+              <input
+                type="text"
+                placeholder="組別名稱"
+                value={newCat.name}
+                onChange={e => setNewCat(p => ({ ...p, name: e.target.value }))}
+                className="min-w-36"
+              />
+            </div>
+            <div>
+              <label className="block font-mono text-[9px] tracking-widest uppercase text-txt3 mb-1">顏色</label>
+              <select value={newCat.color} onChange={e => setNewCat(p => ({ ...p, color: e.target.value }))} className="w-24">
+                {COLOR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block font-mono text-[9px] tracking-widest uppercase text-txt3 mb-1">賽制</label>
+              <select value={newCat.rounds} onChange={e => setNewCat(p => ({ ...p, rounds: +e.target.value }))} className="w-44">
+                {ROUNDS_OPTIONS.map(o => <option key={o.n} value={o.n}>{o.label}</option>)}
+              </select>
+            </div>
+            <button type="submit" className="bg-lime text-bg font-condensed font-bold text-xs tracking-widest uppercase px-4 py-2 rounded hover:bg-[#b5de25] transition-colors whitespace-nowrap">
+              + 新增
+            </button>
+          </form>
+        </div>
+      )}
+
       <div className="font-condensed font-bold text-sm tracking-widest uppercase text-txt3 mb-3">選擇組別</div>
 
       <div className="space-y-3 mb-6">
         {categories.length === 0 && (
           <div className="text-txt3 font-mono text-center py-12 bg-s1 border border-border rounded-lg">
-            尚無組別，{isAdmin ? '請在下方新增' : '請聯繫管理員新增組別'}
+            尚無組別，{isAdmin ? '請在上方新增' : '請聯繫管理員新增組別'}
           </div>
         )}
         {categories.map(c => (
@@ -115,37 +148,15 @@ export default function EventDetail() {
         ))}
       </div>
 
-      {isAdmin && (
-        <div className="bg-s1 border border-border rounded-lg p-6">
-          <div className="font-condensed font-bold text-sm tracking-widest uppercase text-lime mb-4">新增組別</div>
-          <form onSubmit={handleAddCat} className="flex gap-3 flex-wrap items-end">
-            <div>
-              <label className="block font-mono text-[9px] tracking-widest uppercase text-txt3 mb-1">名稱</label>
-              <input
-                type="text"
-                placeholder="組別名稱"
-                value={newCat.name}
-                onChange={e => setNewCat(p => ({ ...p, name: e.target.value }))}
-                className="min-w-36"
-              />
-            </div>
-            <div>
-              <label className="block font-mono text-[9px] tracking-widest uppercase text-txt3 mb-1">顏色</label>
-              <select value={newCat.color} onChange={e => setNewCat(p => ({ ...p, color: e.target.value }))} className="w-24">
-                {COLOR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block font-mono text-[9px] tracking-widest uppercase text-txt3 mb-1">賽制</label>
-              <select value={newCat.rounds} onChange={e => setNewCat(p => ({ ...p, rounds: +e.target.value }))} className="w-44">
-                {ROUNDS_OPTIONS.map(o => <option key={o.n} value={o.n}>{o.label}</option>)}
-              </select>
-            </div>
-            <button type="submit" className="bg-lime text-bg font-condensed font-bold text-xs tracking-widest uppercase px-4 py-2 rounded hover:bg-[#b5de25] transition-colors whitespace-nowrap">
-              + 新增
-            </button>
-          </form>
-        </div>
+      {isOrganizer && (
+        <Link to={`/events/${id}/judge-account`}
+          className="flex items-center justify-between bg-s1 border border-border rounded-lg p-5 hover:border-cyan/50 transition-colors group">
+          <div>
+            <div className="font-condensed font-bold text-sm tracking-widest uppercase text-cyan">裁判帳號管理</div>
+            <div className="font-mono text-xs text-txt3 mt-0.5">設定裁判登入密碼與存取狀態</div>
+          </div>
+          <span className="text-txt3 group-hover:text-cyan transition-colors">→</span>
+        </Link>
       )}
     </Layout>
   );

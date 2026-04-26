@@ -48,7 +48,8 @@ export const eventsAPI = {
   saveScores: (id, data) => api.post(`/events/${id}/scores`, data),
   saveAttempt: (id, data) => api.put(`/events/${id}/scores/attempt`, data),
   getRanking: (id, round) => api.get(`/events/${id}/ranking/${round}`),
-  exportCSV: (id, round, categoryId) => api.get(`/events/${id}/export/${round}`, { params: { category_id: categoryId }, responseType: 'blob' }),
+  exportCSV: (id, round, categoryId, type) => api.get(`/events/${id}/export/${round}`, { params: { category_id: categoryId, type }, responseType: 'blob' }),
+  getStartOrder: (id, catId, round) => api.get(`/events/${id}/categories/${catId}/startorder/${round}`),
 };
 
 const publicApi = axios.create({
@@ -66,4 +67,10 @@ export const usersAPI = {
   list: () => api.get('/users'),
   create: (data) => api.post('/users', data),
   delete: (id) => api.delete(`/users/${id}`),
+  resetPassword: (id, password) => api.put(`/users/${id}/password`, { password }),
+  toggleActive: (id, active) => api.put(`/users/${id}/active`, { active }),
+  updateEvents: (id, event_ids) => api.put(`/users/${id}/events`, { event_ids }),
+  getJudge: (id) => api.get(`/users/${id}/judge`),
+  setJudgePassword: (id, password) => api.put(`/users/${id}/judge/password`, { password }),
+  toggleJudgeActive: (id, active) => api.put(`/users/${id}/judge/active`, { active }),
 };

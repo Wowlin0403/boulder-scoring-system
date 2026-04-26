@@ -10,7 +10,7 @@ export default function Events() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', date: new Date().toISOString().slice(0, 10) });
   const [loading, setLoading] = useState(true);
-  const { isAdmin } = useAuth();
+  const { isAdmin, isSuperadmin } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
 
@@ -51,7 +51,7 @@ export default function Events() {
     <Layout>
       <div className="flex items-center justify-between mb-6">
         <h1 className="font-condensed font-black text-2xl tracking-widest uppercase text-lime">比賽列表</h1>
-        {isAdmin && (
+        {isSuperadmin && (
           <button
             onClick={() => setShowForm(!showForm)}
             className="bg-lime text-bg font-condensed font-bold text-xs tracking-widest uppercase px-4 py-2 rounded hover:bg-[#b5de25] transition-colors"
@@ -61,7 +61,7 @@ export default function Events() {
         )}
       </div>
 
-      {showForm && isAdmin && (
+      {showForm && isSuperadmin && (
         <form onSubmit={handleCreate} className="bg-s1 border border-border rounded-lg p-6 mb-6">
           <div className="font-condensed font-bold text-sm tracking-widest uppercase text-lime mb-4">新建比賽</div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -100,7 +100,7 @@ export default function Events() {
                 >
                   進入
                 </Link>
-                {isAdmin && (
+                {isSuperadmin && (
                   <button
                     onClick={() => handleDelete(ev.id, ev.name)}
                     className="border border-red/30 text-red font-condensed font-bold text-xs tracking-widest uppercase px-4 py-2 rounded hover:bg-red hover:text-white transition-colors"

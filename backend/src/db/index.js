@@ -89,10 +89,25 @@ try { db.exec('ALTER TABLE categories ADD COLUMN rounds INTEGER NOT NULL DEFAULT
 try { db.exec('ALTER TABLE categories ADD COLUMN semi_quota INTEGER DEFAULT 0'); } catch {}
 try { db.exec('ALTER TABLE categories ADD COLUMN final_quota INTEGER DEFAULT 0'); } catch {}
 
+// Role & account structure migrations
+try { db.exec('ALTER TABLE users ADD COLUMN active INTEGER DEFAULT 1'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN organizer_id INTEGER REFERENCES users(id)'); } catch {}
+try { db.exec('ALTER TABLE events ADD COLUMN organizer_id INTEGER REFERENCES users(id)'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN password_plain TEXT'); } catch {}
+// 補填既有裁判帳號的明文密碼（預設為主辦方帳號 + 1234）
+db.prepare(`
+  UPDATE users SET password_plain = (
+    SELECT org.username || '1234' FROM users org WHERE org.id = users.organizer_id
+  )
+  WHERE role = 'judge' AND password_plain IS NULL AND organizer_id IS NOT NULL
+`).run();
+// Migrate old 'admin' role to 'superadmin'
+db.prepare("UPDATE users SET role = 'superadmin' WHERE role = 'admin'").run();
+
 const existing = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
 if (!existing) {
   const hash = bcrypt.hashSync('admin1234', 10);
-  db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)').run('admin', hash, 'admin');
+  db.prepare('INSERT INTO users (username, password_hash, role, active) VALUES (?, ?, ?, 1)').run('admin', hash, 'superadmin');
 }
 
 module.exports = db;

@@ -1,8 +1,8 @@
 const router = require('express').Router();
 const db = require('../db');
-const { adminOnly } = require('../middleware/auth');
+const { adminOnly, superadminOnly, requireEventOwnership } = require('../middleware/auth');
 const { getAdvancedIds } = require('../utils/advancement');
-const { makeCmp, assignRanks, computeRoundRankMap } = require('../utils/ranking');
+const { calcScore, makeCmp, assignRanks, computeRoundRankMap } = require('../utils/ranking');
 
 const ROUND_KEYS = ['qual', 'semi', 'final'];
 
@@ -26,10 +26,20 @@ const ATHLETE_SELECT = `
 // ── Events ──────────────────────────────────────────────────────────────────
 
 router.get('/', (req, res) => {
+  if (req.user.role === 'organizer') {
+    return res.json(db.prepare('SELECT * FROM events WHERE organizer_id = ? ORDER BY date DESC, id DESC').all(req.user.id));
+  }
+  if (req.user.role === 'judge') {
+    const me = db.prepare('SELECT organizer_id FROM users WHERE id = ?').get(req.user.id);
+    if (me?.organizer_id) {
+      return res.json(db.prepare('SELECT * FROM events WHERE organizer_id = ? ORDER BY date DESC, id DESC').all(me.organizer_id));
+    }
+    return res.json([]);
+  }
   res.json(db.prepare('SELECT * FROM events ORDER BY date DESC, id DESC').all());
 });
 
-router.post('/', adminOnly, (req, res) => {
+router.post('/', superadminOnly, (req, res) => {
   const { name, date } = req.body;
   if (!name || !date) return res.status(400).json({ error: '名稱與日期必填' });
 
@@ -50,7 +60,7 @@ router.get('/:id', (req, res) => {
   res.json(event);
 });
 
-router.put('/:id', adminOnly, (req, res) => {
+router.put('/:id', superadminOnly, (req, res) => {
   const { name, date } = req.body;
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: '賽事不存在' });
@@ -58,7 +68,7 @@ router.put('/:id', adminOnly, (req, res) => {
   res.json(db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id));
 });
 
-router.delete('/:id', adminOnly, (req, res) => {
+router.delete('/:id', superadminOnly, (req, res) => {
   if (!db.prepare('SELECT id FROM events WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: '賽事不存在' });
   db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
@@ -74,7 +84,7 @@ router.get('/:id/boulders/:round', (req, res) => {
   res.json(db.prepare('SELECT * FROM boulders WHERE category_id = ? AND round = ? ORDER BY number').all(category_id, round));
 });
 
-router.put('/:id/boulders/:round/resize', adminOnly, (req, res) => {
+router.put('/:id/boulders/:round/resize', adminOnly, requireEventOwnership, (req, res) => {
   const { id, round } = req.params;
   const { count, category_id } = req.body;
   if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
@@ -94,7 +104,7 @@ router.put('/:id/boulders/:round/resize', adminOnly, (req, res) => {
   res.json(db.prepare('SELECT * FROM boulders WHERE category_id = ? AND round = ? ORDER BY number').all(category_id, round));
 });
 
-router.put('/:id/boulders/:bId', adminOnly, (req, res) => {
+router.put('/:id/boulders/:bId', adminOnly, requireEventOwnership, (req, res) => {
   const { label } = req.body;
   if (!label) return res.status(400).json({ error: '標籤必填' });
   db.prepare('UPDATE boulders SET label = ? WHERE id = ? AND event_id = ?').run(label, req.params.bId, req.params.id);
@@ -107,7 +117,7 @@ router.get('/:id/categories', (req, res) => {
   res.json(db.prepare('SELECT * FROM categories WHERE event_id = ? ORDER BY id').all(req.params.id));
 });
 
-router.post('/:id/categories', adminOnly, (req, res) => {
+router.post('/:id/categories', adminOnly, requireEventOwnership, (req, res) => {
   const { name, color = '#c8f135', rounds = 1 } = req.body;
   if (!name) return res.status(400).json({ error: '組別名稱必填' });
   const catId = db.prepare('INSERT INTO categories (event_id, name, color, rounds) VALUES (?, ?, ?, ?)').run(req.params.id, name, color, rounds).lastInsertRowid;
@@ -115,7 +125,7 @@ router.post('/:id/categories', adminOnly, (req, res) => {
   res.status(201).json(db.prepare('SELECT * FROM categories WHERE id = ?').get(catId));
 });
 
-router.put('/:id/categories/:catId', adminOnly, (req, res) => {
+router.put('/:id/categories/:catId', adminOnly, requireEventOwnership, (req, res) => {
   const { semi_quota, final_quota, rounds } = req.body;
   const cat = db.prepare('SELECT * FROM categories WHERE id = ? AND event_id = ?').get(req.params.catId, req.params.id);
   if (!cat) return res.status(404).json({ error: '組別不存在' });
@@ -141,7 +151,7 @@ router.put('/:id/categories/:catId', adminOnly, (req, res) => {
   res.json(db.prepare('SELECT * FROM categories WHERE id = ?').get(req.params.catId));
 });
 
-router.delete('/:id/categories/:catId', adminOnly, (req, res) => {
+router.delete('/:id/categories/:catId', adminOnly, requireEventOwnership, (req, res) => {
   db.prepare('DELETE FROM categories WHERE id = ? AND event_id = ?').run(req.params.catId, req.params.id);
   res.json({ ok: true });
 });
@@ -162,7 +172,7 @@ router.get('/:id/athletes', (req, res) => {
   res.json(athletes);
 });
 
-router.post('/:id/athletes', adminOnly, (req, res) => {
+router.post('/:id/athletes', adminOnly, requireEventOwnership, (req, res) => {
   const { name, bib, category_id } = req.body;
   if (!name || !bib) return res.status(400).json({ error: '姓名與號碼牌必填' });
   if (db.prepare('SELECT id FROM athletes WHERE event_id = ? AND bib = ?').get(req.params.id, bib)) {
@@ -172,17 +182,17 @@ router.post('/:id/athletes', adminOnly, (req, res) => {
   res.status(201).json(db.prepare(`${ATHLETE_SELECT} WHERE a.id = ?`).get(athId));
 });
 
-router.delete('/:id/athletes', adminOnly, (req, res) => {
+router.delete('/:id/athletes', adminOnly, requireEventOwnership, (req, res) => {
   db.prepare('DELETE FROM athletes WHERE event_id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
-router.delete('/:id/athletes/:athId', adminOnly, (req, res) => {
+router.delete('/:id/athletes/:athId', adminOnly, requireEventOwnership, (req, res) => {
   db.prepare('DELETE FROM athletes WHERE id = ? AND event_id = ?').run(req.params.athId, req.params.id);
   res.json({ ok: true });
 });
 
-router.post('/:id/athletes/bulk', adminOnly, (req, res) => {
+router.post('/:id/athletes/bulk', adminOnly, requireEventOwnership, (req, res) => {
   const { athletes } = req.body;
   if (!Array.isArray(athletes) || athletes.length === 0) return res.status(400).json({ error: '資料格式錯誤' });
 
@@ -289,13 +299,14 @@ router.get('/:id/ranking/:round', (req, res) => {
     if (!byCategory[key]) byCategory[key] = [];
     const boulders = bouldersMap[a.category_id] || [];
     let tops = 0, zones = 0, tAtt = 0, zAtt = 0;
-    boulders.forEach(b => {
+    const boulderScores = boulders.map(b => {
       const s = scoreMap[a.id]?.[b.id];
-      if (!s) return;
+      if (!s) return { boulder_id: b.id, top: 0, top_attempts: 0, zone: 0, zone_attempts: 0 };
       if (s.top) { tops++; tAtt += s.top_attempts || 1; }
       if (s.zone) { zones++; zAtt += s.zone_attempts || 1; }
+      return { boulder_id: b.id, top: s.top ? 1 : 0, top_attempts: s.top_attempts || 0, zone: s.zone ? 1 : 0, zone_attempts: s.zone_attempts || 0 };
     });
-    byCategory[key].push({ ...a, tops, zones, tAtt, zAtt, scored: !!scoreMap[a.id] });
+    byCategory[key].push({ ...a, tops, zones, tAtt, zAtt, scored: !!scoreMap[a.id], boulderScores, score: calcScore(boulderScores) });
   });
 
   // Build prev-round rank maps per category for tiebreaking
@@ -324,18 +335,21 @@ router.get('/:id/ranking/:round', (req, res) => {
 
 // ── CSV Export ───────────────────────────────────────────────────────────────
 
-router.get('/:id/export/:round', adminOnly, (req, res) => {
+router.get('/:id/export/:round', adminOnly, requireEventOwnership, (req, res) => {
   const { id, round } = req.params;
-  const { category_id } = req.query;
-  const ROUND_NAMES = { qual: '資格賽', semi: '半決賽', final: '決賽' };
+  const { category_id, type = 'results' } = req.query;
+  const ROUND_NAMES = { qual: '資格賽', semi: '複賽', final: '決賽' };
   if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
+
+  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(id);
+  if (!event) return res.status(404).json({ error: '賽事不存在' });
 
   const catList = db.prepare('SELECT * FROM categories WHERE event_id = ?').all(id);
   const roundCats = catList.filter(c => getRounds(c.rounds).includes(round));
   const activeCats = category_id ? roundCats.filter(c => String(c.id) === String(category_id)) : roundCats;
   const activeCatIds = new Set(activeCats.map(c => c.id));
 
-  let athletes = db.prepare(`
+  const allAthletes = db.prepare(`
     SELECT a.*, c.name as category_name FROM athletes a
     LEFT JOIN categories c ON a.category_id = c.id WHERE a.event_id = ? ORDER BY a.bib
   `).all(id).filter(a => a.category_id && activeCatIds.has(a.category_id));
@@ -351,44 +365,146 @@ router.get('/:id/export/:round', adminOnly, (req, res) => {
     scoreMap[s.athlete_id][s.boulder_id] = s;
   });
 
-  const byCategory = {};
-  athletes.forEach(a => {
-    const boulders = bouldersMap[a.category_id] || [];
-    let tops = 0, zones = 0, tAtt = 0, zAtt = 0;
-    boulders.forEach(b => {
-      const s = scoreMap[a.id]?.[b.id];
-      if (!s) return;
-      if (s.top) { tops++; tAtt += s.top_attempts || 1; }
-      if (s.zone) { zones++; zAtt += s.zone_attempts || 1; }
-    });
-    const key = a.category_id || 'none';
-    if (!byCategory[key]) byCategory[key] = [];
-    byCategory[key].push({ ...a, tops, zones, tAtt, zAtt });
-  });
+  const rows = [];
 
-  const exportPrevRankMaps = {};
-  activeCats.forEach(cat => {
+  activeCats.forEach((cat, catIdx) => {
+    const boulders = bouldersMap[cat.id] || [];
     const catRoundsArr = getRounds(cat.rounds);
-    const idx = catRoundsArr.indexOf(round);
-    if (idx > 0) {
-      exportPrevRankMaps[cat.id] = computeRoundRankMap(db, id, cat.id, catRoundsArr[idx - 1], catRoundsArr);
+    const roundIdx = catRoundsArr.indexOf(round);
+
+    let catAthletes = allAthletes.filter(a => a.category_id === cat.id);
+    if (round !== 'qual') {
+      const advancedIds = getAdvancedIds(db, id, round);
+      if (advancedIds) catAthletes = catAthletes.filter(a => advancedIds.has(a.id));
     }
-  });
 
-  const rows = [['名次', '號碼牌', '姓名', '組別', 'TOP數', 'ZONE數', 'TOP嘗試次數', 'ZONE嘗試次數']];
-  Object.entries(byCategory).forEach(([catId, group]) => {
-    const cmp = makeCmp(exportPrevRankMaps[catId] || null);
-    assignRanks(group, cmp);
-    group.forEach(a => {
-      rows.push([a.rank, a.bib, a.name, a.category_name || '', a.tops, a.zones, a.tAtt, a.zAtt]);
+    // Build start order
+    let athletesWithOrder;
+    if (round === 'qual' || roundIdx <= 0) {
+      athletesWithOrder = catAthletes.map((a, i) => ({ ...a, startOrder: i + 1 }));
+    } else {
+      const prevRound = catRoundsArr[roundIdx - 1];
+      const prevRM = computeRoundRankMap(db, id, cat.id, prevRound, catRoundsArr);
+      const sorted = [...catAthletes].sort((a, b) => {
+        const ra = prevRM[a.id] ?? 9999, rb = prevRM[b.id] ?? 9999;
+        if (ra !== rb) return rb - ra;
+        return String(a.bib).localeCompare(String(b.bib));
+      });
+      athletesWithOrder = sorted.map((a, i) => ({ ...a, startOrder: i + 1 }));
+    }
+
+    // Score and rank
+    const prevRankMap = roundIdx > 0 ? computeRoundRankMap(db, id, cat.id, catRoundsArr[roundIdx - 1], catRoundsArr) : null;
+    const cmp = makeCmp(prevRankMap);
+
+    const scoredAthletes = athletesWithOrder.map(a => {
+      const boulderScores = boulders.map(b => {
+        const s = scoreMap[a.id]?.[b.id];
+        if (!s) return { top: 0, top_attempts: 0, zone: 0, zone_attempts: 0 };
+        return { top: s.top ? 1 : 0, top_attempts: s.top_attempts || 0, zone: s.zone ? 1 : 0, zone_attempts: s.zone_attempts || 0 };
+      });
+      let tops = 0, zones = 0, tAtt = 0, zAtt = 0;
+      boulderScores.forEach(b => {
+        if (b.top) { tops++; tAtt += b.top_attempts || 1; }
+        if (b.zone) { zones++; zAtt += b.zone_attempts || 1; }
+      });
+      return { ...a, boulderScores, score: calcScore(boulderScores), tops, zones, tAtt, zAtt };
     });
+
+    assignRanks(scoredAthletes, cmp);
+
+    // Determine who advances to next round
+    let advancingIds = new Set();
+    const nextRoundIdx = roundIdx + 1;
+    if (nextRoundIdx < catRoundsArr.length) {
+      const nextAdvanced = getAdvancedIds(db, id, catRoundsArr[nextRoundIdx]);
+      if (nextAdvanced) advancingIds = nextAdvanced;
+    }
+
+    // Event header rows (only for first category)
+    if (catIdx === 0) {
+      rows.push([event.name]);
+      rows.push([event.date]);
+    }
+
+    const isStartOrder = type === 'startorder';
+
+    // Category / round header
+    rows.push([cat.name, ROUND_NAMES[round], isStartOrder ? '出場序' : '成績']);
+
+    // Double column headers
+    const header1 = ['出場序', ...(isStartOrder ? [] : ['晉級', '排名']), '背號', '姓名'];
+    const header2 = ['', ...(isStartOrder ? [] : ['', '']), '', ''];
+    boulders.forEach(b => { header1.push(`B${b.number}`, ''); header2.push('Top', 'Zone'); });
+    header1.push('成績', '', '', '');
+    header2.push('結果', '總Top次', '總Zone次', '分數');
+    rows.push(header1);
+    rows.push(header2);
+
+    const dataRows = isStartOrder
+      ? [...scoredAthletes].sort((a, b) => a.startOrder - b.startOrder)
+      : [...scoredAthletes].sort((a, b) => a.rank - b.rank || a.startOrder - b.startOrder);
+
+    dataRows.forEach(a => {
+      const row = [a.startOrder, ...(isStartOrder ? [] : [advancingIds.has(a.id) ? 'V' : '', a.rank]), a.bib, a.name];
+      boulders.forEach((_, i) => {
+        const bs = isStartOrder ? null : a.boulderScores[i];
+        row.push(bs?.top ? (bs.top_attempts || 1) : '');
+        row.push(bs?.zone ? (bs.zone_attempts || 1) : '');
+      });
+      if (isStartOrder) {
+        row.push('', '', '', '');
+      } else {
+        row.push(`${a.tops}T${a.zones}Z`, a.tAtt, a.zAtt, a.score.toFixed(1));
+      }
+      rows.push(row);
+    });
+
+    rows.push([]);
   });
 
-  const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-  const filename = `成績_${ROUND_NAMES[round]}_${new Date().toISOString().slice(0, 10)}.csv`;
+  const csv = rows.map(r => r.map(v => `"${String(v ?? '')}"`).join(',')).join('\n');
+  const typeLabel = type === 'startorder' ? '出場序' : '成績';
+  const filename = `${typeLabel}_${ROUND_NAMES[round]}_${new Date().toISOString().slice(0, 10)}.csv`;
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
   res.send('﻿' + csv);
+});
+
+// ── Start Order ──────────────────────────────────────────────────────────────
+
+router.get('/:id/categories/:catId/startorder/:round', (req, res) => {
+  const { id, catId, round } = req.params;
+  if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
+
+  const category = db.prepare('SELECT * FROM categories WHERE id = ? AND event_id = ?').get(catId, id);
+  if (!category) return res.status(404).json({ error: '組別不存在' });
+
+  const catRoundsArr = getRounds(category.rounds);
+  const roundIdx = catRoundsArr.indexOf(round);
+
+  let athletes = db.prepare('SELECT * FROM athletes WHERE event_id = ? AND category_id = ? ORDER BY bib').all(id, catId);
+
+  if (round !== 'qual') {
+    const advancedIds = getAdvancedIds(db, id, round);
+    if (advancedIds) athletes = athletes.filter(a => advancedIds.has(a.id));
+  }
+
+  if (round === 'qual' || roundIdx <= 0) {
+    return res.json(athletes.map((a, i) => ({ ...a, startOrder: i + 1, prevRank: null })));
+  }
+
+  const prevRound = catRoundsArr[roundIdx - 1];
+  const prevRankMap = computeRoundRankMap(db, id, catId, prevRound, catRoundsArr);
+
+  athletes.sort((a, b) => {
+    const ra = prevRankMap[a.id] ?? 9999;
+    const rb = prevRankMap[b.id] ?? 9999;
+    if (ra !== rb) return rb - ra;
+    return String(a.bib).localeCompare(String(b.bib));
+  });
+
+  res.json(athletes.map((a, i) => ({ ...a, startOrder: i + 1, prevRank: prevRankMap[a.id] ?? null })));
 });
 
 module.exports = router;
