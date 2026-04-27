@@ -11,11 +11,13 @@ function parseCSV(text, categories) {
     const cols = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
     const [name = '', bib = '', categoryName = ''] = cols;
     const cat = categories.find(c => c.name === categoryName.trim());
+    const rawBib = bib.trim();
+    const formattedBib = /^\d+$/.test(rawBib) ? rawBib.padStart(3, '0') : rawBib;
     const errors = [];
     if (!name) errors.push('姓名空白');
-    if (!bib) errors.push('號碼牌空白');
+    if (!rawBib) errors.push('號碼牌空白');
     if (categoryName && !cat) errors.push(`找不到組別「${categoryName}」`);
-    return { rowNum: i + 2, name: name.trim(), bib: bib.trim(), categoryName: categoryName.trim(), category_id: cat?.id || null, errors };
+    return { rowNum: i + 2, name: name.trim(), bib: formattedBib, categoryName: categoryName.trim(), category_id: cat?.id || null, errors };
   }).filter(r => r.name || r.bib);
 }
 

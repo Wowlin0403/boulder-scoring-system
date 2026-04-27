@@ -162,7 +162,7 @@ router.get('/:id/athletes', (req, res) => {
   const { round } = req.query;
   if (!db.prepare('SELECT id FROM events WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: '賽事不存在' });
 
-  let athletes = db.prepare(`${ATHLETE_SELECT} WHERE a.event_id = ? ORDER BY a.bib`).all(req.params.id);
+  let athletes = db.prepare(`${ATHLETE_SELECT} WHERE a.event_id = ? ORDER BY CAST(a.bib AS INTEGER), a.bib`).all(req.params.id);
 
   if (round && round !== 'qual') {
     const advancedIds = getAdvancedIds(db, req.params.id, round);
@@ -175,8 +175,8 @@ router.get('/:id/athletes', (req, res) => {
 router.post('/:id/athletes', adminOnly, requireEventOwnership, (req, res) => {
   const { name, bib, category_id } = req.body;
   if (!name || !bib) return res.status(400).json({ error: '姓名與號碼牌必填' });
-  if (db.prepare('SELECT id FROM athletes WHERE event_id = ? AND bib = ?').get(req.params.id, bib)) {
-    return res.status(409).json({ error: '號碼牌已存在' });
+  if (db.prepare('SELECT id FROM athletes WHERE event_id = ? AND category_id = ? AND bib = ?').get(req.params.id, category_id || null, bib)) {
+    return res.status(409).json({ error: '號碼牌已存在（同組別）' });
   }
   const athId = db.prepare('INSERT INTO athletes (event_id, category_id, name, bib) VALUES (?, ?, ?, ?)').run(req.params.id, category_id || null, name, bib).lastInsertRowid;
   res.status(201).json(db.prepare(`${ATHLETE_SELECT} WHERE a.id = ?`).get(athId));
@@ -197,13 +197,13 @@ router.post('/:id/athletes/bulk', adminOnly, requireEventOwnership, (req, res) =
   if (!Array.isArray(athletes) || athletes.length === 0) return res.status(400).json({ error: '資料格式錯誤' });
 
   const imported = [], skipped = [];
-  const checkBib = db.prepare('SELECT id FROM athletes WHERE event_id = ? AND bib = ?');
+  const checkBib = db.prepare('SELECT id FROM athletes WHERE event_id = ? AND category_id = ? AND bib = ?');
   const insert = db.prepare('INSERT INTO athletes (event_id, category_id, name, bib) VALUES (?, ?, ?, ?)');
 
   db.transaction(() => {
     for (const a of athletes) {
-      if (checkBib.get(req.params.id, a.bib)) {
-        skipped.push({ ...a, reason: '號碼牌已存在' });
+      if (checkBib.get(req.params.id, a.category_id || null, a.bib)) {
+        skipped.push({ ...a, reason: '號碼牌已存在（同組別）' });
       } else {
         insert.run(req.params.id, a.category_id || null, a.name, a.bib);
         imported.push(a);
@@ -273,7 +273,7 @@ router.get('/:id/ranking/:round', (req, res) => {
   const activeCats = catList.filter(c => getRounds(c.rounds).includes(round));
   const activeCatIds = new Set(activeCats.map(c => c.id));
 
-  let athletes = db.prepare(`${ATHLETE_SELECT} WHERE a.event_id = ? ORDER BY a.bib`).all(id);
+  let athletes = db.prepare(`${ATHLETE_SELECT} WHERE a.event_id = ? ORDER BY CAST(a.bib AS INTEGER), a.bib`).all(id);
 
   if (round !== 'qual') {
     const advancedIds = getAdvancedIds(db, id, round);
@@ -351,7 +351,7 @@ router.get('/:id/export/:round', adminOnly, requireEventOwnership, (req, res) =>
 
   const allAthletes = db.prepare(`
     SELECT a.*, c.name as category_name FROM athletes a
-    LEFT JOIN categories c ON a.category_id = c.id WHERE a.event_id = ? ORDER BY a.bib
+    LEFT JOIN categories c ON a.category_id = c.id WHERE a.event_id = ? ORDER BY CAST(a.bib AS INTEGER), a.bib
   `).all(id).filter(a => a.category_id && activeCatIds.has(a.category_id));
 
   const bouldersMap = {};
@@ -388,7 +388,7 @@ router.get('/:id/export/:round', adminOnly, requireEventOwnership, (req, res) =>
       const sorted = [...catAthletes].sort((a, b) => {
         const ra = prevRM[a.id] ?? 9999, rb = prevRM[b.id] ?? 9999;
         if (ra !== rb) return rb - ra;
-        return String(a.bib).localeCompare(String(b.bib));
+        return String(a.bib).localeCompare(String(b.bib), undefined, { numeric: true });
       });
       athletesWithOrder = sorted.map((a, i) => ({ ...a, startOrder: i + 1 }));
     }
