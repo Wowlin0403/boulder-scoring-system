@@ -11,12 +11,12 @@ function getAdvancedIds(db, eventId, toRound) {
   const categories = db.prepare('SELECT * FROM categories WHERE event_id = ?').all(eventId);
   const quotaField = toRound === 'semi' ? 'semi_quota' : 'final_quota';
 
-  let athletes = db.prepare('SELECT id, category_id FROM athletes WHERE event_id = ?').all(eventId);
+  const athletes = db.prepare('SELECT id, category_id FROM athletes WHERE event_id = ?').all(eventId);
 
-  // For rounds beyond semi, restrict to athletes already in semi
+  // Pre-compute semi advancement for final round (applied per-category only if category has semi)
+  let semiAdvancedIds = null;
   if (toRound !== 'semi') {
-    const prevIds = getAdvancedIds(db, eventId, 'semi');
-    if (prevIds) athletes = athletes.filter(a => prevIds.has(a.id));
+    semiAdvancedIds = getAdvancedIds(db, eventId, 'semi');
   }
 
   const allScores = {};
@@ -45,11 +45,17 @@ function getAdvancedIds(db, eventId, toRound) {
     const toIdx = catRounds.indexOf(toRound);
     if (toIdx <= 0) return;
 
+    // For final: filter by semi advancement only if this category actually has a semi round
+    let catGroup = group;
+    if (semiAdvancedIds !== null && catRounds.includes('semi')) {
+      catGroup = group.filter(a => semiAdvancedIds.has(a.id));
+    }
+
     const fromRound = catRounds[toIdx - 1];
     const quota = cat[quotaField] || 0;
     const boulders = db.prepare('SELECT * FROM boulders WHERE category_id = ? AND round = ? ORDER BY number').all(catId, fromRound);
 
-    const ranked = group.map(a => {
+    const ranked = catGroup.map(a => {
       const scores = allScores[`${a.id}|${fromRound}`] || {};
       const boulderScores = boulders.map(b => {
         const s = scores[b.id];
