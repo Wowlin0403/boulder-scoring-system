@@ -327,8 +327,13 @@ router.get('/:id/ranking/:round', (req, res) => {
   });
 
   const quotas = {};
-  const quotaField = round === 'qual' ? 'semi_quota' : round === 'semi' ? 'final_quota' : null;
-  if (quotaField) catList.forEach(c => { quotas[c.id] = c[quotaField] || 0; });
+  activeCats.forEach(c => {
+    const catRoundsArr = getRounds(c.rounds);
+    const nextRound = catRoundsArr[catRoundsArr.indexOf(round) + 1];
+    if (nextRound === 'semi') quotas[c.id] = c.semi_quota || 0;
+    else if (nextRound === 'final') quotas[c.id] = c.final_quota || 0;
+    else quotas[c.id] = 0;
+  });
 
   res.json({ athletes: result, bouldersMap, total: athletes.length, scored: athletes.filter(a => scoreMap[a.id]).length, quotas });
 });
