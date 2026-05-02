@@ -18,6 +18,20 @@ function calcScore(boulderScores) {
 function BoulderCard({ b }) {
   const topped = b.top > 0;
   const zoned = b.zone > 0;
+  const attempted = (b.attempts || 0) > 0;
+
+  // 無成績：有嘗試但無 Top/Zone → 對角線
+  if (!topped && !zoned && attempted) {
+    return (
+      <div style={{ width: 28, height: 42, borderRadius: 5, border: '1px solid #3a3a3e', position: 'relative', overflow: 'hidden', background: 'rgba(74,90,110,0.2)' }}>
+        <svg width="28" height="42" style={{ position: 'absolute', top: 0, left: 0 }}>
+          <line x1="1" y1="1" x2="27" y2="41" stroke="#5a5a6a" strokeWidth="1" />
+        </svg>
+      </div>
+    );
+  }
+
+  // 未出場 或 有成績：原有顯示
   return (
     <div className="flex flex-col" style={{ width: 28, height: 42, borderRadius: 5, overflow: 'hidden', border: '1px solid #3a3a3e' }}>
       <div className="flex-1 flex items-center justify-center font-mono font-bold text-[10px] border-b" style={{

@@ -1,18 +1,47 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { eventsAPI } from '../api';
 import { useToast } from '../components/Toast';
 
 const ROUND_NAMES = { qual: '資格賽', semi: '複賽', final: '決賽' };
+
+function isEventLocked(event) {
+  if (!event) return false;
+  if (event.locked === 1) return true;
+  if (event.locked === 0) return false;
+  if (!event.date) return false;
+  const lockDate = new Date(event.date);
+  lockDate.setDate(lockDate.getDate() + 7);
+  return new Date() > lockDate;
+}
+
+function playClick() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const buffer = ctx.createBuffer(1, ctx.sampleRate * 0.025, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    }
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.4, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.025);
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    source.start();
+  } catch {}
+}
 const getRounds = (n) => n === 2 ? ['qual', 'final'] : ['qual', 'semi', 'final'].slice(0, n);
 
-function BoulderCard({ boulder, score, onChange, onReset, attempts, onAttemptsChange }) {
+function BoulderCard({ boulder, score, onChange, onReset, attempts, onAttemptsChange, disabled }) {
   const toast = useToast();
 
   const top = score.top || false;
   const zone = score.zone || false;
-  const canAct = attempts > 0;
+  const canAct = !disabled && attempts > 0;
 
   const handleTop = () => {
     if (!canAct && !top) return;
@@ -43,7 +72,8 @@ function BoulderCard({ boulder, score, onChange, onReset, attempts, onAttemptsCh
         </div>
         <button
           onClick={onReset}
-          className="font-condensed font-bold text-[10px] tracking-widest uppercase text-txt3 border border-border rounded px-2 py-0.5 hover:border-txt3 hover:text-txt2 transition-colors"
+          disabled={disabled}
+          className="font-condensed font-bold text-[10px] tracking-widest uppercase text-txt3 border border-border rounded px-2 py-0.5 hover:border-txt3 hover:text-txt2 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
         >
           重設
         </button>
@@ -87,17 +117,23 @@ function BoulderCard({ boulder, score, onChange, onReset, attempts, onAttemptsCh
 
       <div className="px-4 pb-4">
         <div className="font-mono text-[9px] tracking-widest uppercase text-txt3 mb-1.5">嘗試次數</div>
-        <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 50px' }}>
+        <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 80px' }}>
           <input
             type="number"
             min={0}
             value={attempts}
+            disabled={disabled}
             onChange={e => onAttemptsChange(Math.max(0, parseInt(e.target.value) || 0))}
-            className="text-center font-mono font-bold text-lg py-2.5 w-full"
+            className="text-center font-mono font-bold text-lg py-2.5 w-full disabled:opacity-40"
           />
           <button
-            onClick={() => onAttemptsChange(attempts + 1)}
-            className="h-[46px] bg-s3 border border-border2 text-txt text-2xl font-bold rounded hover:bg-border2 transition-colors active:scale-95 select-none"
+            disabled={disabled}
+            onClick={() => {
+              onAttemptsChange(attempts + 1);
+              playClick();
+              navigator.vibrate?.(30);
+            }}
+            className="h-[46px] bg-s3 border border-border2 text-txt text-3xl font-bold rounded hover:bg-border2 transition-colors active:scale-95 select-none disabled:opacity-30 disabled:cursor-not-allowed"
           >
             +
           </button>
@@ -163,7 +199,6 @@ export default function Scoring() {
   const [pendingSwitch, setPendingSwitch] = useState(null);
   const [resetTarget, setResetTarget] = useState(null);
   const [attemptCounts, setAttemptCounts] = useState({});
-  const attemptTimers = useRef({});
 
   const selectedAthObj = athletes.find(a => String(a.id) === selectedAthlete);
   const availableRounds = category ? getRounds(category.rounds) : ['qual'];
@@ -224,12 +259,8 @@ export default function Scoring() {
 
   const handleAttemptsChange = useCallback((boulderId, val) => {
     setAttemptCounts(prev => ({ ...prev, [boulderId]: val }));
-    clearTimeout(attemptTimers.current[boulderId]);
-    attemptTimers.current[boulderId] = setTimeout(() => {
-      if (!selectedAthlete) return;
-      eventsAPI.saveAttempt(id, { athlete_id: +selectedAthlete, round: selectedRound, boulder_id: boulderId, attempts: val });
-    }, 500);
-  }, [id, selectedAthlete, selectedRound]);
+    setIsDirty(true);
+  }, []);
 
   const handleResetConfirm = () => {
     if (!resetTarget) return;
@@ -250,6 +281,7 @@ export default function Scoring() {
         top_attempts: scores[b.id]?.top_attempts || 0,
         zone: scores[b.id]?.zone || false,
         zone_attempts: scores[b.id]?.zone_attempts || 0,
+        attempts: attemptCounts[b.id] || 0,
       }));
       await eventsAPI.saveScores(id, { athlete_id: +selectedAthlete, round: selectedRound, scores: scoreArray });
       toast('成績已儲存 ✓');
@@ -306,6 +338,8 @@ export default function Scoring() {
 
   if (!event || !category) return <Layout><div className="text-txt3 font-mono py-16 text-center">載入中...</div></Layout>;
 
+  const locked = isEventLocked(event);
+
   return (
     <Layout>
       {pendingSwitch && (
@@ -332,6 +366,16 @@ export default function Scoring() {
         <span>/</span>
         <span className="text-txt">裁判計分</span>
       </div>
+
+      {locked && (
+        <div className="mb-6 bg-red/5 border border-red/30 rounded-lg px-5 py-3 flex items-center gap-3">
+          <span className="text-base">🔒</span>
+          <div>
+            <div className="font-condensed font-bold text-sm text-red tracking-wide">此比賽已鎖定，無法記錄成績</div>
+            <div className="font-mono text-xs text-txt3 mt-0.5">如需解鎖，請聯繫系統管理員</div>
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-3 flex-wrap items-end mb-6">
         <div className="flex-1 min-w-48">
@@ -362,7 +406,7 @@ export default function Scoring() {
         </div>
         <button
           onClick={handleSave}
-          disabled={saving || !selectedAthlete}
+          disabled={saving || !selectedAthlete || locked}
           className="bg-lime text-bg font-condensed font-bold text-xs tracking-widest uppercase px-5 py-[9px] rounded hover:bg-[#b5de25] transition-colors disabled:opacity-40"
         >
           {saving ? '儲存中...' : '💾 儲存成績'}
@@ -386,6 +430,7 @@ export default function Scoring() {
                 onReset={() => setResetTarget({ boulderId: b.id, label: b.label })}
                 attempts={attemptCounts[b.id] || 0}
                 onAttemptsChange={val => handleAttemptsChange(b.id, val)}
+                disabled={locked}
               />
             ))}
           </div>

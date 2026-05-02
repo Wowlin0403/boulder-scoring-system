@@ -41,15 +41,16 @@ export const eventsAPI = {
   deleteCategory: (id, catId) => api.delete(`/events/${id}/categories/${catId}`),
   getAthletes: (id, params) => api.get(`/events/${id}/athletes`, { params }),
   createAthlete: (id, data) => api.post(`/events/${id}/athletes`, data),
+  updateAthlete: (id, athId, data) => api.put(`/events/${id}/athletes/${athId}`, data),
   deleteAthlete: (id, athId) => api.delete(`/events/${id}/athletes/${athId}`),
   deleteAllAthletes: (id) => api.delete(`/events/${id}/athletes`),
   bulkImportAthletes: (id, athletes) => api.post(`/events/${id}/athletes/bulk`, { athletes }),
   getScores: (id, round) => api.get(`/events/${id}/scores/${round}`),
   saveScores: (id, data) => api.post(`/events/${id}/scores`, data),
-  saveAttempt: (id, data) => api.put(`/events/${id}/scores/attempt`, data),
   getRanking: (id, round) => api.get(`/events/${id}/ranking/${round}`),
   exportCSV: (id, round, categoryId, type) => api.get(`/events/${id}/export/${round}`, { params: { category_id: categoryId, type }, responseType: 'blob' }),
   getStartOrder: (id, catId, round) => api.get(`/events/${id}/categories/${catId}/startorder/${round}`),
+  lockEvent: (id, locked) => api.put(`/events/${id}/lock`, { locked }),
 };
 
 const publicApi = axios.create({

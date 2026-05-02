@@ -38,6 +38,8 @@ export default function Athletes() {
   const [athletes, setAthletes] = useState([]);
   const [categories, setCategories] = useState([]);
   const [form, setForm] = useState({ name: '', bib: '' });
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ name: '', bib: '' });
   const [importPreview, setImportPreview] = useState(null);
   const [importing, setImporting] = useState(false);
 
@@ -72,12 +74,28 @@ export default function Athletes() {
   const handleDeleteAll = async () => {
     if (!confirm(`確認要清除「${category?.name}」的全部選手資料？此操作無法復原。`)) return;
     try {
-      const toDelete = athletes.map(a => a.id);
-      await Promise.all(toDelete.map(athId => eventsAPI.deleteAthlete(id, athId)));
+      await eventsAPI.deleteAllAthletes(id);
       await load();
       toast('已清除該組別全部選手');
     } catch {
       toast('清除失敗', 'error');
+    }
+  };
+
+  const handleEditStart = (a) => {
+    setEditingId(a.id);
+    setEditForm({ name: a.name, bib: a.bib });
+  };
+
+  const handleEditSave = async (athId) => {
+    if (!editForm.name.trim() || !editForm.bib.trim()) return toast('請填寫姓名與號碼牌', 'error');
+    try {
+      await eventsAPI.updateAthlete(id, athId, editForm);
+      setEditingId(null);
+      await load();
+      toast('已更新');
+    } catch (err) {
+      toast(err.response?.data?.error || '更新失敗', 'error');
     }
   };
 
@@ -285,16 +303,64 @@ export default function Athletes() {
               <tbody>
                 {athletes.map(a => (
                   <tr key={a.id} className="hover:bg-s2 transition-colors">
-                    <td className="py-2.5 px-3 font-mono text-xs text-txt3">{a.bib}</td>
-                    <td className="py-2.5 px-3 font-bold text-txt">{a.name}</td>
-                    <td className="py-2.5 px-3 text-right">
-                      <button
-                        onClick={() => handleDelete(a.id, a.name)}
-                        className="border border-red/30 text-red font-condensed font-bold text-[10px] tracking-widest uppercase px-2.5 py-1 rounded hover:bg-red hover:text-white transition-colors"
-                      >
-                        移除
-                      </button>
-                    </td>
+                    {editingId === a.id ? (
+                      <>
+                        <td className="py-1.5 px-3">
+                          <input
+                            type="text"
+                            value={editForm.bib}
+                            onChange={e => setEditForm(f => ({ ...f, bib: e.target.value }))}
+                            className="font-mono text-xs w-20 py-1 px-2"
+                          />
+                        </td>
+                        <td className="py-1.5 px-3">
+                          <input
+                            type="text"
+                            value={editForm.name}
+                            onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                            className="text-sm w-full py-1 px-2"
+                            autoFocus
+                          />
+                        </td>
+                        <td className="py-1.5 px-3 text-right">
+                          <div className="flex gap-1.5 justify-end">
+                            <button
+                              onClick={() => handleEditSave(a.id)}
+                              className="bg-lime text-bg font-condensed font-bold text-[10px] tracking-widest uppercase px-2.5 py-1 rounded hover:bg-[#b5de25] transition-colors"
+                            >
+                              儲存
+                            </button>
+                            <button
+                              onClick={() => setEditingId(null)}
+                              className="border border-border2 text-txt2 font-condensed font-bold text-[10px] tracking-widest uppercase px-2.5 py-1 rounded hover:border-txt2 transition-colors"
+                            >
+                              取消
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="py-2.5 px-3 font-mono text-xs text-txt3">{a.bib}</td>
+                        <td className="py-2.5 px-3 font-bold text-txt">{a.name}</td>
+                        <td className="py-2.5 px-3 text-right">
+                          <div className="flex gap-1.5 justify-end">
+                            <button
+                              onClick={() => handleEditStart(a)}
+                              className="border border-border2 text-txt2 font-condensed font-bold text-[10px] tracking-widest uppercase px-2.5 py-1 rounded hover:border-txt2 hover:text-txt transition-colors"
+                            >
+                              編輯
+                            </button>
+                            <button
+                              onClick={() => handleDelete(a.id, a.name)}
+                              className="border border-red/30 text-red font-condensed font-bold text-[10px] tracking-widest uppercase px-2.5 py-1 rounded hover:bg-red hover:text-white transition-colors"
+                            >
+                              移除
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>

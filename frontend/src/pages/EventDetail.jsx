@@ -5,6 +5,16 @@ import { eventsAPI } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 
+function isEventLocked(event) {
+  if (!event) return false;
+  if (event.locked === 1) return true;
+  if (event.locked === 0) return false;
+  if (!event.date) return false;
+  const lockDate = new Date(event.date);
+  lockDate.setDate(lockDate.getDate() + 7);
+  return new Date() > lockDate;
+}
+
 const COLOR_OPTIONS = [
   { value: '#c8f135', label: '萊姆' },
   { value: '#38e8d5', label: '青' },
@@ -33,6 +43,16 @@ export default function EventDetail() {
     const [ev, cl] = await Promise.all([eventsAPI.get(id), eventsAPI.getCategories(id)]);
     setEvent(ev.data);
     setCategories(cl.data);
+  };
+
+  const handleLockToggle = async (locked) => {
+    try {
+      const res = await eventsAPI.lockEvent(id, locked);
+      setEvent(res.data);
+      toast(locked === 1 ? '比賽已手動鎖定' : locked === 0 ? '比賽已強制解鎖' : '已恢復自動鎖定');
+    } catch {
+      toast('操作失敗', 'error');
+    }
   };
 
   useEffect(() => { load(); }, [id]);
@@ -73,11 +93,52 @@ export default function EventDetail() {
       </div>
 
       <div className="font-condensed font-black text-2xl tracking-widest uppercase text-lime mb-1">{event.name}</div>
-      <div className="font-mono text-xs text-txt3 mb-6">{event.date}</div>
+      <div className="font-mono text-xs text-txt3 mb-3">{event.date}</div>
+
+      {(() => {
+        const locked = isEventLocked(event);
+        const isManual = event.locked === 0 || event.locked === 1;
+        return (
+          <div className="flex items-center gap-3 mb-6 flex-wrap">
+            <span className={`font-mono text-xs px-2.5 py-1 rounded border ${locked ? 'border-red/40 text-red bg-red/5' : 'border-lime/30 text-lime/70 bg-lime/5'}`}>
+              {locked ? '🔒 已鎖定' : '🔓 開放中'}
+              {event.locked === 1 && ' (手動)'}
+              {event.locked === 0 && ' (強制解鎖)'}
+            </span>
+            {isSuperadmin && locked && (
+              <button
+                onClick={() => handleLockToggle(0)}
+                className="font-mono text-xs px-3 py-1 rounded border border-lime/40 text-lime hover:bg-lime/10 transition-colors"
+              >
+                解除鎖定
+              </button>
+            )}
+            {isSuperadmin && !locked && (
+              <button
+                onClick={() => handleLockToggle(1)}
+                className="font-mono text-xs px-3 py-1 rounded border border-red/30 text-red hover:bg-red/10 transition-colors"
+              >
+                立即鎖定
+              </button>
+            )}
+            {isSuperadmin && isManual && (
+              <button
+                onClick={() => handleLockToggle(null)}
+                className="font-mono text-xs px-3 py-1 rounded border border-border2 text-txt3 hover:border-txt3 transition-colors"
+              >
+                恢復自動
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {isAdmin && (
         <div className="bg-s1 border border-border rounded-lg p-6 mb-6">
           <div className="font-condensed font-bold text-sm tracking-widest uppercase text-lime mb-4">新增組別</div>
+          {categories.length >= 5 ? (
+            <div className="font-mono text-xs text-txt3">已達上限（最多 5 個組別）</div>
+          ) : (
           <form onSubmit={handleAddCat} className="flex gap-3 flex-wrap items-end">
             <div>
               <label className="block font-mono text-[9px] tracking-widest uppercase text-txt3 mb-1">名稱</label>
@@ -105,6 +166,7 @@ export default function EventDetail() {
               + 新增
             </button>
           </form>
+          )}
         </div>
       )}
 

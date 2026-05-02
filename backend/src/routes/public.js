@@ -62,10 +62,10 @@ router.get('/events/:id/ranking/:round', (req, res) => {
     let tops = 0, zones = 0, tAtt = 0, zAtt = 0;
     const boulderScores = boulders.map(b => {
       const s = scoreMap[a.id]?.[b.id];
-      if (!s) return { boulder_id: b.id, top: 0, top_attempts: 0, zone: 0, zone_attempts: 0 };
+      if (!s) return { boulder_id: b.id, top: 0, top_attempts: 0, zone: 0, zone_attempts: 0, attempts: 0 };
       if (s.top) { tops++; tAtt += s.top_attempts || 1; }
       if (s.zone) { zones++; zAtt += s.zone_attempts || 1; }
-      return { boulder_id: b.id, top: s.top ? 1 : 0, top_attempts: s.top_attempts || 0, zone: s.zone ? 1 : 0, zone_attempts: s.zone_attempts || 0 };
+      return { boulder_id: b.id, top: s.top ? 1 : 0, top_attempts: s.top_attempts || 0, zone: s.zone ? 1 : 0, zone_attempts: s.zone_attempts || 0, attempts: s.attempts || 0 };
     });
     byCategory[key].push({ ...a, tops, zones, tAtt, zAtt, scored: !!scoreMap[a.id], boulderScores, score: calcScore(boulderScores) });
   });

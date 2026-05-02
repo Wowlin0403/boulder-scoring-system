@@ -5,6 +5,15 @@ import { eventsAPI } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 
+function isEventLocked(ev) {
+  if (ev.locked === 1) return true;
+  if (ev.locked === 0) return false;
+  if (!ev.date) return false;
+  const lockDate = new Date(ev.date);
+  lockDate.setDate(lockDate.getDate() + 7);
+  return new Date() > lockDate;
+}
+
 export default function Events() {
   const [events, setEvents] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -90,7 +99,10 @@ export default function Events() {
           {events.map(ev => (
             <div key={ev.id} className="bg-s1 border border-border rounded-lg p-5 flex items-center justify-between hover:border-border2 transition-colors">
               <div>
-                <div className="font-condensed font-bold text-lg text-txt">{ev.name}</div>
+                <div className="flex items-center gap-2">
+                  <div className="font-condensed font-bold text-lg text-txt">{ev.name}</div>
+                  {isEventLocked(ev) && <span className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-red/30 text-red/70">🔒</span>}
+                </div>
                 <div className="font-mono text-xs text-txt3 mt-1">{ev.date}</div>
               </div>
               <div className="flex gap-2">

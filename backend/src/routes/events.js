@@ -5,6 +5,24 @@ const { getAdvancedIds } = require('../utils/advancement');
 const { calcScore, makeCmp, assignRanks, computeRoundRankMap } = require('../utils/ranking');
 
 const ROUND_KEYS = ['qual', 'semi', 'final'];
+const LOCK_DAYS = 7;
+
+function isEventLocked(event) {
+  if (event.locked === 1) return true;
+  if (event.locked === 0) return false;
+  if (!event.date) return false;
+  const lockDate = new Date(event.date);
+  lockDate.setDate(lockDate.getDate() + LOCK_DAYS);
+  return new Date() > lockDate;
+}
+
+function requireUnlocked(req, res, next) {
+  if (req.user?.role === 'superadmin') return next();
+  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
+  if (!event) return res.status(404).json({ error: '賽事不存在' });
+  if (isEventLocked(event)) return res.status(423).json({ error: '此比賽已鎖定，無法進行編輯' });
+  next();
+}
 
 function getRounds(n) {
   if (n === 2) return ['qual', 'final'];
@@ -74,6 +92,14 @@ router.delete('/:id', superadminOnly, (req, res) => {
   res.json({ ok: true });
 });
 
+router.put('/:id/lock', superadminOnly, (req, res) => {
+  const { locked } = req.body; // null | 0 | 1
+  const event = db.prepare('SELECT id FROM events WHERE id = ?').get(req.params.id);
+  if (!event) return res.status(404).json({ error: '賽事不存在' });
+  db.prepare('UPDATE events SET locked = ? WHERE id = ?').run(locked ?? null, req.params.id);
+  res.json(db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id));
+});
+
 // ── Boulders（per category per round）────────────────────────────────────────
 
 router.get('/:id/boulders/:round', (req, res) => {
@@ -84,7 +110,7 @@ router.get('/:id/boulders/:round', (req, res) => {
   res.json(db.prepare('SELECT * FROM boulders WHERE category_id = ? AND round = ? ORDER BY number').all(category_id, round));
 });
 
-router.put('/:id/boulders/:round/resize', adminOnly, requireEventOwnership, (req, res) => {
+router.put('/:id/boulders/:round/resize', adminOnly, requireEventOwnership, requireUnlocked, (req, res) => {
   const { id, round } = req.params;
   const { count, category_id } = req.body;
   if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
@@ -104,7 +130,7 @@ router.put('/:id/boulders/:round/resize', adminOnly, requireEventOwnership, (req
   res.json(db.prepare('SELECT * FROM boulders WHERE category_id = ? AND round = ? ORDER BY number').all(category_id, round));
 });
 
-router.put('/:id/boulders/:bId', adminOnly, requireEventOwnership, (req, res) => {
+router.put('/:id/boulders/:bId', adminOnly, requireEventOwnership, requireUnlocked, (req, res) => {
   const { label } = req.body;
   if (!label) return res.status(400).json({ error: '標籤必填' });
   db.prepare('UPDATE boulders SET label = ? WHERE id = ? AND event_id = ?').run(label, req.params.bId, req.params.id);
@@ -117,15 +143,17 @@ router.get('/:id/categories', (req, res) => {
   res.json(db.prepare('SELECT * FROM categories WHERE event_id = ? ORDER BY id').all(req.params.id));
 });
 
-router.post('/:id/categories', adminOnly, requireEventOwnership, (req, res) => {
+router.post('/:id/categories', adminOnly, requireEventOwnership, requireUnlocked, (req, res) => {
   const { name, color = '#c8f135', rounds = 1 } = req.body;
   if (!name) return res.status(400).json({ error: '組別名稱必填' });
+  const catCount = db.prepare('SELECT COUNT(*) as n FROM categories WHERE event_id = ?').get(req.params.id).n;
+  if (catCount >= 5) return res.status(400).json({ error: '單場比賽最多 5 個組別' });
   const catId = db.prepare('INSERT INTO categories (event_id, name, color, rounds) VALUES (?, ?, ?, ?)').run(req.params.id, name, color, rounds).lastInsertRowid;
   createCategoryBoulders(req.params.id, catId, rounds);
   res.status(201).json(db.prepare('SELECT * FROM categories WHERE id = ?').get(catId));
 });
 
-router.put('/:id/categories/:catId', adminOnly, requireEventOwnership, (req, res) => {
+router.put('/:id/categories/:catId', adminOnly, requireEventOwnership, requireUnlocked, (req, res) => {
   const { semi_quota, final_quota, rounds } = req.body;
   const cat = db.prepare('SELECT * FROM categories WHERE id = ? AND event_id = ?').get(req.params.catId, req.params.id);
   if (!cat) return res.status(404).json({ error: '組別不存在' });
@@ -151,7 +179,7 @@ router.put('/:id/categories/:catId', adminOnly, requireEventOwnership, (req, res
   res.json(db.prepare('SELECT * FROM categories WHERE id = ?').get(req.params.catId));
 });
 
-router.delete('/:id/categories/:catId', adminOnly, requireEventOwnership, (req, res) => {
+router.delete('/:id/categories/:catId', adminOnly, requireEventOwnership, requireUnlocked, (req, res) => {
   db.prepare('DELETE FROM categories WHERE id = ? AND event_id = ?').run(req.params.catId, req.params.id);
   res.json({ ok: true });
 });
@@ -172,7 +200,7 @@ router.get('/:id/athletes', (req, res) => {
   res.json(athletes);
 });
 
-router.post('/:id/athletes', adminOnly, requireEventOwnership, (req, res) => {
+router.post('/:id/athletes', adminOnly, requireEventOwnership, requireUnlocked, (req, res) => {
   const { name, bib, category_id } = req.body;
   if (!name || !bib) return res.status(400).json({ error: '姓名與號碼牌必填' });
   if (db.prepare('SELECT id FROM athletes WHERE event_id = ? AND category_id = ? AND bib = ?').get(req.params.id, category_id || null, bib)) {
@@ -182,17 +210,28 @@ router.post('/:id/athletes', adminOnly, requireEventOwnership, (req, res) => {
   res.status(201).json(db.prepare(`${ATHLETE_SELECT} WHERE a.id = ?`).get(athId));
 });
 
-router.delete('/:id/athletes', adminOnly, requireEventOwnership, (req, res) => {
+router.delete('/:id/athletes', adminOnly, requireEventOwnership, requireUnlocked, (req, res) => {
   db.prepare('DELETE FROM athletes WHERE event_id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
-router.delete('/:id/athletes/:athId', adminOnly, requireEventOwnership, (req, res) => {
+router.put('/:id/athletes/:athId', adminOnly, requireEventOwnership, requireUnlocked, (req, res) => {
+  const { name, bib } = req.body;
+  if (!name?.trim() || !bib?.trim()) return res.status(400).json({ error: '姓名與號碼牌必填' });
+  const ath = db.prepare('SELECT * FROM athletes WHERE id = ? AND event_id = ?').get(req.params.athId, req.params.id);
+  if (!ath) return res.status(404).json({ error: '選手不存在' });
+  const conflict = db.prepare('SELECT id FROM athletes WHERE event_id = ? AND category_id = ? AND bib = ? AND id != ?').get(req.params.id, ath.category_id, bib.trim(), req.params.athId);
+  if (conflict) return res.status(409).json({ error: '號碼牌已存在（同組別）' });
+  db.prepare('UPDATE athletes SET name = ?, bib = ? WHERE id = ? AND event_id = ?').run(name.trim(), bib.trim(), req.params.athId, req.params.id);
+  res.json(db.prepare('SELECT * FROM athletes WHERE id = ?').get(req.params.athId));
+});
+
+router.delete('/:id/athletes/:athId', adminOnly, requireEventOwnership, requireUnlocked, (req, res) => {
   db.prepare('DELETE FROM athletes WHERE id = ? AND event_id = ?').run(req.params.athId, req.params.id);
   res.json({ ok: true });
 });
 
-router.post('/:id/athletes/bulk', adminOnly, requireEventOwnership, (req, res) => {
+router.post('/:id/athletes/bulk', adminOnly, requireEventOwnership, requireUnlocked, (req, res) => {
   const { athletes } = req.body;
   if (!Array.isArray(athletes) || athletes.length === 0) return res.status(400).json({ error: '資料格式錯誤' });
 
@@ -228,40 +267,30 @@ router.get('/:id/scores/:round', (req, res) => {
   `).all(id, round));
 });
 
-router.post('/:id/scores', (req, res) => {
+router.post('/:id/scores', requireUnlocked, (req, res) => {
   const { athlete_id, round, scores } = req.body;
   if (!athlete_id || !round || !Array.isArray(scores)) return res.status(400).json({ error: '資料格式錯誤' });
   if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
 
   const upsert = db.prepare(`
-    INSERT INTO scores (athlete_id, event_id, round, boulder_id, top, top_attempts, zone, zone_attempts, updated_at, updated_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
+    INSERT INTO scores (athlete_id, event_id, round, boulder_id, top, top_attempts, zone, zone_attempts, attempts, updated_at, updated_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
     ON CONFLICT(athlete_id, round, boulder_id) DO UPDATE SET
       top=excluded.top, top_attempts=excluded.top_attempts,
       zone=excluded.zone, zone_attempts=excluded.zone_attempts,
+      attempts=excluded.attempts,
       updated_at=excluded.updated_at, updated_by=excluded.updated_by
   `);
 
   db.transaction(items => {
     for (const s of items) {
-      upsert.run(athlete_id, req.params.id, round, s.boulder_id, s.top ? 1 : 0, s.top_attempts || 0, s.zone ? 1 : 0, s.zone_attempts || 0, req.user.id);
+      upsert.run(athlete_id, req.params.id, round, s.boulder_id, s.top ? 1 : 0, s.top_attempts || 0, s.zone ? 1 : 0, s.zone_attempts || 0, s.attempts || 0, req.user.id);
     }
   })(scores);
 
   res.json({ ok: true });
 });
 
-router.put('/:id/scores/attempt', (req, res) => {
-  const { athlete_id, round, boulder_id, attempts } = req.body;
-  if (!athlete_id || !round || !boulder_id || attempts === undefined) return res.status(400).json({ error: '資料格式錯誤' });
-  db.prepare(`
-    INSERT INTO scores (athlete_id, event_id, round, boulder_id, attempts, updated_at, updated_by)
-    VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
-    ON CONFLICT(athlete_id, round, boulder_id) DO UPDATE SET
-      attempts=excluded.attempts, updated_at=excluded.updated_at
-  `).run(athlete_id, req.params.id, round, boulder_id, attempts, req.user.id);
-  res.json({ ok: true });
-});
 
 // ── Ranking ──────────────────────────────────────────────────────────────────
 
@@ -301,10 +330,10 @@ router.get('/:id/ranking/:round', (req, res) => {
     let tops = 0, zones = 0, tAtt = 0, zAtt = 0;
     const boulderScores = boulders.map(b => {
       const s = scoreMap[a.id]?.[b.id];
-      if (!s) return { boulder_id: b.id, top: 0, top_attempts: 0, zone: 0, zone_attempts: 0 };
+      if (!s) return { boulder_id: b.id, top: 0, top_attempts: 0, zone: 0, zone_attempts: 0, attempts: 0 };
       if (s.top) { tops++; tAtt += s.top_attempts || 1; }
       if (s.zone) { zones++; zAtt += s.zone_attempts || 1; }
-      return { boulder_id: b.id, top: s.top ? 1 : 0, top_attempts: s.top_attempts || 0, zone: s.zone ? 1 : 0, zone_attempts: s.zone_attempts || 0 };
+      return { boulder_id: b.id, top: s.top ? 1 : 0, top_attempts: s.top_attempts || 0, zone: s.zone ? 1 : 0, zone_attempts: s.zone_attempts || 0, attempts: s.attempts || 0 };
     });
     byCategory[key].push({ ...a, tops, zones, tAtt, zAtt, scored: !!scoreMap[a.id], boulderScores, score: calcScore(boulderScores) });
   });

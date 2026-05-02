@@ -94,6 +94,7 @@ try { db.exec('ALTER TABLE users ADD COLUMN active INTEGER DEFAULT 1'); } catch 
 try { db.exec('ALTER TABLE users ADD COLUMN organizer_id INTEGER REFERENCES users(id)'); } catch {}
 try { db.exec('ALTER TABLE events ADD COLUMN organizer_id INTEGER REFERENCES users(id)'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN password_plain TEXT'); } catch {}
+try { db.exec('ALTER TABLE events ADD COLUMN locked INTEGER DEFAULT NULL'); } catch {}
 // 補填既有裁判帳號的明文密碼（預設為主辦方帳號 + 1234）
 db.prepare(`
   UPDATE users SET password_plain = (

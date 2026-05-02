@@ -93,9 +93,23 @@ function calcScore(boulderScores) {
 function BoulderCard({ b, compact }) {
   const topped = b.top > 0;
   const zoned = b.zone > 0;
+  const attempted = (b.attempts || 0) > 0;
+  const w = compact ? 28 : 36;
+  const h = compact ? 42 : 54;
+
+  if (!topped && !zoned && attempted) {
+    return (
+      <div style={{ width: w, height: h, borderRadius: 6, border: '1px solid rgb(var(--border))', position: 'relative', overflow: 'hidden', background: 'rgb(var(--txt3) / 0.2)' }}>
+        <svg width={w} height={h} style={{ position: 'absolute', top: 0, left: 0 }}>
+          <line x1="1" y1="1" x2={w - 1} y2={h - 1} stroke="rgb(var(--txt3))" strokeWidth="1" />
+        </svg>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col" style={{
-      width: compact ? 28 : 36, height: compact ? 42 : 54,
+      width: w, height: h,
       borderRadius: 6, overflow: 'hidden',
       border: '1px solid rgb(var(--border))',
     }}>
