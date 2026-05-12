@@ -2,7 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const { adminOnly, superadminOnly, requireEventOwnership } = require('../middleware/auth');
 const { getAdvancedIds } = require('../utils/advancement');
-const { calcScore, makeCmp, assignRanks, computeRoundRankMap } = require('../utils/ranking');
+const { calcScore, makeCmp, assignRanks, assignRanksWithDns, computeRoundRankMap } = require('../utils/ranking');
 
 const ROUND_KEYS = ['qual', 'semi', 'final'];
 const LOCK_DAYS = 7;
@@ -322,11 +322,16 @@ router.get('/:id/ranking/:round', (req, res) => {
     scoreMap[s.athlete_id][s.boulder_id] = s;
   });
 
+  const dnsSet = new Set(
+    db.prepare('SELECT athlete_id FROM dns_records WHERE event_id = ? AND round = ?').all(id, round).map(r => r.athlete_id)
+  );
+
   const byCategory = {};
   athletes.forEach(a => {
     const key = a.category_id;
     if (!byCategory[key]) byCategory[key] = [];
     const boulders = bouldersMap[a.category_id] || [];
+    const is_dns = dnsSet.has(a.id);
     let tops = 0, zones = 0, tAtt = 0, zAtt = 0;
     const boulderScores = boulders.map(b => {
       const s = scoreMap[a.id]?.[b.id];
@@ -335,7 +340,7 @@ router.get('/:id/ranking/:round', (req, res) => {
       if (s.zone) { zones++; zAtt += s.zone_attempts || 1; }
       return { boulder_id: b.id, top: s.top ? 1 : 0, top_attempts: s.top_attempts || 0, zone: s.zone ? 1 : 0, zone_attempts: s.zone_attempts || 0, attempts: s.attempts || 0 };
     });
-    byCategory[key].push({ ...a, tops, zones, tAtt, zAtt, scored: !!scoreMap[a.id], boulderScores, score: calcScore(boulderScores) });
+    byCategory[key].push({ ...a, tops, zones, tAtt, zAtt, scored: !!scoreMap[a.id], boulderScores, score: calcScore(boulderScores), is_dns });
   });
 
   // Build prev-round rank maps per category for tiebreaking
@@ -351,7 +356,7 @@ router.get('/:id/ranking/:round', (req, res) => {
   const result = [];
   Object.entries(byCategory).forEach(([catId, group]) => {
     const cmp = makeCmp(prevRankMaps[catId] || null);
-    assignRanks(group, cmp);
+    assignRanksWithDns(group, cmp, prevRankMaps[catId] || null);
     group.forEach(a => result.push(a));
   });
 
@@ -365,6 +370,31 @@ router.get('/:id/ranking/:round', (req, res) => {
   });
 
   res.json({ athletes: result, bouldersMap, total: athletes.length, scored: athletes.filter(a => scoreMap[a.id]).length, quotas });
+});
+
+// ── DNS ──────────────────────────────────────────────────────────────────────
+
+router.get('/:id/dns', (req, res) => {
+  const { round } = req.query;
+  if (!round || !ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
+  const records = db.prepare('SELECT athlete_id FROM dns_records WHERE event_id = ? AND round = ?').all(req.params.id, round);
+  res.json({ dns: records.map(r => r.athlete_id) });
+});
+
+router.post('/:id/dns', adminOnly, requireEventOwnership, (req, res) => {
+  const { athlete_id, round } = req.body;
+  if (!athlete_id || !round || !ROUND_KEYS.includes(round)) return res.status(400).json({ error: '參數錯誤' });
+  const athlete = db.prepare('SELECT id FROM athletes WHERE id = ? AND event_id = ?').get(athlete_id, req.params.id);
+  if (!athlete) return res.status(404).json({ error: '選手不存在' });
+  db.prepare('INSERT OR REPLACE INTO dns_records (athlete_id, event_id, round) VALUES (?, ?, ?)').run(athlete_id, req.params.id, round);
+  res.json({ ok: true });
+});
+
+router.delete('/:id/dns', adminOnly, requireEventOwnership, (req, res) => {
+  const { athlete_id, round } = req.body;
+  if (!athlete_id || !round) return res.status(400).json({ error: '參數錯誤' });
+  db.prepare('DELETE FROM dns_records WHERE athlete_id = ? AND event_id = ? AND round = ?').run(athlete_id, req.params.id, round);
+  res.json({ ok: true });
 });
 
 // ── CSV Export ───────────────────────────────────────────────────────────────
@@ -399,6 +429,10 @@ router.get('/:id/export/:round', adminOnly, requireEventOwnership, (req, res) =>
     scoreMap[s.athlete_id][s.boulder_id] = s;
   });
 
+  const dnsSet = new Set(
+    db.prepare('SELECT athlete_id FROM dns_records WHERE event_id = ? AND round = ?').all(id, round).map(r => r.athlete_id)
+  );
+
   const rows = [];
 
   activeCats.forEach((cat, catIdx) => {
@@ -432,6 +466,11 @@ router.get('/:id/export/:round', adminOnly, requireEventOwnership, (req, res) =>
     const cmp = makeCmp(prevRankMap);
 
     const scoredAthletes = athletesWithOrder.map(a => {
+      const is_dns = dnsSet.has(a.id);
+      if (is_dns) {
+        const empty = boulders.map(() => ({ top: 0, top_attempts: 0, zone: 0, zone_attempts: 0 }));
+        return { ...a, is_dns, boulderScores: empty, score: 0, tops: 0, zones: 0, tAtt: 0, zAtt: 0 };
+      }
       const boulderScores = boulders.map(b => {
         const s = scoreMap[a.id]?.[b.id];
         if (!s) return { top: 0, top_attempts: 0, zone: 0, zone_attempts: 0 };
@@ -442,7 +481,7 @@ router.get('/:id/export/:round', adminOnly, requireEventOwnership, (req, res) =>
         if (b.top) { tops++; tAtt += b.top_attempts || 1; }
         if (b.zone) { zones++; zAtt += b.zone_attempts || 1; }
       });
-      return { ...a, boulderScores, score: calcScore(boulderScores), tops, zones, tAtt, zAtt };
+      return { ...a, is_dns: false, boulderScores, score: calcScore(boulderScores), tops, zones, tAtt, zAtt };
     });
 
     assignRanks(scoredAthletes, cmp);
@@ -480,7 +519,8 @@ router.get('/:id/export/:round', adminOnly, requireEventOwnership, (req, res) =>
       : [...scoredAthletes].sort((a, b) => a.rank - b.rank || a.startOrder - b.startOrder);
 
     dataRows.forEach(a => {
-      const row = [a.startOrder, ...(isStartOrder ? [] : [advancingIds.has(a.id) ? 'V' : '', a.rank]), a.bib, a.name];
+      const advCol = a.is_dns ? 'DNS' : (advancingIds.has(a.id) ? 'V' : '');
+      const row = [a.startOrder, ...(isStartOrder ? [] : [advCol, a.rank]), a.bib, a.name];
       boulders.forEach((_, i) => {
         const bs = isStartOrder ? null : a.boulderScores[i];
         row.push(bs?.top ? (bs.top_attempts || 1) : '');

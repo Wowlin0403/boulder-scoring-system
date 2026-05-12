@@ -142,17 +142,17 @@ function CutoffLine({ compact }) {
   );
 }
 
-function AthleteRow({ a, boulders, compact, badge }) {
+function AthleteRow({ a, boulders, compact, badge, isDns }) {
   const score = calcScore(a.boulderScores);
   const hasScore = score > 0;
   return (
-    <div className={`flex items-center border-b border-border/30 last:border-b-0 hover:bg-s2/50 transition-colors ${
-      compact ? 'gap-3 px-4 py-2' : 'gap-5 px-5 py-3.5'
-    }`}>
+    <div className={`flex items-center border-b border-border/30 last:border-b-0 hover:bg-s2/50 transition-colors ${compact ? 'gap-3 px-4 py-2' : 'gap-5 px-5 py-3.5'}`}>
       {badge ? (
         <div className={`rounded-full flex items-center justify-center font-mono font-bold flex-shrink-0 ${
           compact ? 'w-7 h-7 text-xs' : 'w-8 h-8 text-sm'
-        } bg-s3 text-txt3`}>{a.rank}</div>
+        } bg-s3 text-txt3`}>
+          {a.rank}
+        </div>
       ) : (
         <div className="font-mono font-bold text-xl text-txt w-8 text-center flex-shrink-0">{a.rank}</div>
       )}
@@ -162,7 +162,9 @@ function AthleteRow({ a, boulders, compact, badge }) {
       </div>
       <div className="flex gap-1 items-end flex-shrink-0">
         {boulders.map((b, i) => {
-          const bs = a.boulderScores?.[i] || { boulder_id: b.id, top: 0, top_attempts: 0, zone: 0, zone_attempts: 0 };
+          const bs = isDns
+            ? { boulder_id: b.id, top: 0, top_attempts: 0, zone: 0, zone_attempts: 0 }
+            : (a.boulderScores?.[i] || { boulder_id: b.id, top: 0, top_attempts: 0, zone: 0, zone_attempts: 0 });
           return (
             <div key={b.id} className="flex flex-col items-center gap-1">
               <BoulderCard b={bs} compact={compact} />
@@ -172,11 +174,11 @@ function AthleteRow({ a, boulders, compact, badge }) {
         })}
       </div>
       <div className="font-condensed font-black text-right flex-shrink-0 leading-none" style={{
-        color: hasScore ? 'rgb(var(--txt))' : 'rgb(var(--txt3))',
-        fontSize: hasScore ? (compact ? 20 : 26) : (compact ? 13 : 16),
+        color: isDns ? 'rgb(var(--txt3) / 0.6)' : (hasScore ? 'rgb(var(--txt))' : 'rgb(var(--txt3))'),
+        fontSize: compact ? (isDns ? 16 : (hasScore ? 20 : 13)) : (isDns ? 22 : (hasScore ? 26 : 16)),
         width: compact ? 48 : 64,
       }}>
-        {hasScore ? score.toFixed(1) : '—'}
+        {isDns ? 'DNS' : (hasScore ? score.toFixed(1) : '—')}
       </div>
     </div>
   );
@@ -348,14 +350,15 @@ export default function PublicRanking() {
       <div>
         {page.map((a, li) => {
           const gi = pageStart + li;
+          const isDns = !!a.is_dns;
           const prevA = gi > 0 ? catAthletes[gi - 1] : null;
           // 若晉級線已在上一頁末尾顯示，本頁首位不重複
           const skipBoundary = gi === quota && gi === pageStart;
-          const showCutoff = !skipBoundary && cutoffRank !== null && a.rank > cutoffRank && (!prevA || prevA.rank <= cutoffRank);
+          const showCutoff = !isDns && !skipBoundary && cutoffRank !== null && a.rank > cutoffRank && (!prevA || prevA.rank <= cutoffRank);
           return (
             <div key={a.id}>
               {showCutoff && <CutoffLine />}
-              <AthleteRow a={a} boulders={boulders} />
+              <AthleteRow a={a} boulders={boulders} isDns={isDns} />
             </div>
           );
         })}
@@ -389,13 +392,14 @@ export default function PublicRanking() {
               <div className="px-4 py-1.5 bg-s2 border-b border-border font-mono text-[10px] text-txt3 tracking-widest uppercase">{label}</div>
               {col.map((a, li) => {
                 const gi = ci * perCol + li;
+                const isDns = !!a.is_dns;
                 const prevA = gi > 0 ? catAthletes[gi - 1] : null;
-                const showCutoff = !cutoffDone && cutoffRank !== null && a.rank > cutoffRank && (!prevA || prevA.rank <= cutoffRank);
+                const showCutoff = !isDns && !cutoffDone && cutoffRank !== null && a.rank > cutoffRank && (!prevA || prevA.rank <= cutoffRank);
                 if (showCutoff) cutoffDone = true;
                 return (
                   <div key={a.id}>
                     {showCutoff && <CutoffLine compact />}
-                    <AthleteRow a={a} boulders={boulders} compact badge />
+                    <AthleteRow a={a} boulders={boulders} compact badge isDns={isDns} />
                   </div>
                 );
               })}

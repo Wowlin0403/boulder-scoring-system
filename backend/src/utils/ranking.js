@@ -74,4 +74,34 @@ function computeRoundRankMap(db, eventId, catId, round, catRoundsArr) {
   return rankMap;
 }
 
-module.exports = { getRounds, calcScore, makeCmp, assignRanks, computeRoundRankMap };
+// Rank non-DNS athletes normally, then rank DNS athletes after them using prevRankMap tiebreaker
+function assignRanksWithDns(group, cmp, prevRankMap) {
+  const competing = group.filter(a => !a.is_dns);
+  const dns = group.filter(a => a.is_dns);
+
+  assignRanks(competing, cmp);
+
+  const offset = competing.length;
+
+  if (dns.length > 0) {
+    const dnsCmp = (a, b) => {
+      if (prevRankMap) {
+        const pa = prevRankMap[a.id] ?? null;
+        const pb = prevRankMap[b.id] ?? null;
+        if (pa !== null && pb !== null && pa !== pb) return pa - pb;
+      }
+      return 0;
+    };
+    dns.sort(dnsCmp);
+    dns[0].rank = offset + 1;
+    for (let i = 1; i < dns.length; i++) {
+      dns[i].rank = dnsCmp(dns[i], dns[i - 1]) === 0 ? dns[i - 1].rank : offset + i + 1;
+    }
+  }
+
+  // 無論有無 DNS 都重新排序 group，確保 result 按排名順序輸出
+  const sorted = [...competing, ...dns];
+  for (let i = 0; i < sorted.length; i++) group[i] = sorted[i];
+}
+
+module.exports = { getRounds, calcScore, makeCmp, assignRanks, assignRanksWithDns, computeRoundRankMap };

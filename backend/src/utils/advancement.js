@@ -26,6 +26,12 @@ function getAdvancedIds(db, eventId, toRound) {
     allScores[key][s.boulder_id] = s;
   });
 
+  const dnsMap = {};
+  db.prepare('SELECT athlete_id, round FROM dns_records WHERE event_id = ?').all(eventId).forEach(r => {
+    if (!dnsMap[r.round]) dnsMap[r.round] = new Set();
+    dnsMap[r.round].add(r.athlete_id);
+  });
+
   const byCategory = {};
   athletes.forEach(a => {
     const key = a.category_id || 'none';
@@ -45,13 +51,17 @@ function getAdvancedIds(db, eventId, toRound) {
     const toIdx = catRounds.indexOf(toRound);
     if (toIdx <= 0) return;
 
+    const fromRound = catRounds[toIdx - 1];
+
     // For final: filter by semi advancement only if this category actually has a semi round
     let catGroup = group;
     if (semiAdvancedIds !== null && catRounds.includes('semi')) {
       catGroup = group.filter(a => semiAdvancedIds.has(a.id));
     }
 
-    const fromRound = catRounds[toIdx - 1];
+    // Exclude athletes who are DNS in fromRound
+    const fromRoundDns = dnsMap[fromRound] || new Set();
+    catGroup = catGroup.filter(a => !fromRoundDns.has(a.id));
     const quota = cat[quotaField] || 0;
     const boulders = db.prepare('SELECT * FROM boulders WHERE category_id = ? AND round = ? ORDER BY number').all(catId, fromRound);
 

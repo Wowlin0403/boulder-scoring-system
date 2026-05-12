@@ -15,6 +15,7 @@ api.interceptors.response.use(
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
+      return new Promise(() => {});
     }
     return Promise.reject(err);
   }
@@ -51,6 +52,9 @@ export const eventsAPI = {
   exportCSV: (id, round, categoryId, type) => api.get(`/events/${id}/export/${round}`, { params: { category_id: categoryId, type }, responseType: 'blob' }),
   getStartOrder: (id, catId, round) => api.get(`/events/${id}/categories/${catId}/startorder/${round}`),
   lockEvent: (id, locked) => api.put(`/events/${id}/lock`, { locked }),
+  getDns: (id, round) => api.get(`/events/${id}/dns`, { params: { round } }),
+  markDns: (id, data) => api.post(`/events/${id}/dns`, data),
+  cancelDns: (id, data) => api.delete(`/events/${id}/dns`, { data }),
 };
 
 const publicApi = axios.create({

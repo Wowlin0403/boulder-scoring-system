@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { eventsAPI } from '../api';
 import { useToast } from '../components/Toast';
+import { useAuth } from '../context/AuthContext';
 
 const ROUND_NAMES = { qual: '資格賽', semi: '複賽', final: '決賽' };
 
@@ -183,9 +184,29 @@ function ResetModal({ label, onConfirm, onCancel }) {
   );
 }
 
+function DnsModal({ name, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="bg-s1 border border-border2 rounded-lg p-7 max-w-xs w-full text-center">
+        <p className="text-txt text-sm leading-relaxed mb-1">
+          確認將選手<br />
+          <span className="font-condensed font-bold text-base tracking-widest text-lime">{name}</span><br />
+          標記為 <span className="font-condensed font-bold text-red">DNS</span>？
+        </p>
+        <p className="font-mono text-xs text-txt3 mb-6">棄賽選手將排於所有出賽選手之後</p>
+        <div className="grid grid-cols-2 gap-3">
+          <button onClick={onConfirm} className="py-2.5 bg-red/80 text-white font-condensed font-bold text-xs tracking-widest uppercase rounded hover:bg-red transition-colors">確認 DNS</button>
+          <button onClick={onCancel} className="py-2.5 border border-border2 text-txt2 font-condensed font-bold text-xs tracking-widest uppercase rounded hover:border-txt2 transition-colors">取消</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Scoring() {
   const { id, catId } = useParams();
   const toast = useToast();
+  const { isAdmin } = useAuth();
   const [event, setEvent] = useState(null);
   const [category, setCategory] = useState(null);
   const [athletes, setAthletes] = useState([]);
@@ -199,6 +220,13 @@ export default function Scoring() {
   const [pendingSwitch, setPendingSwitch] = useState(null);
   const [resetTarget, setResetTarget] = useState(null);
   const [attemptCounts, setAttemptCounts] = useState({});
+  const [isDns, setIsDns] = useState(false);
+  const [showDnsModal, setShowDnsModal] = useState(false);
+  const [dnsSet, setDnsSet] = useState(new Set());
+
+  useEffect(() => {
+    setIsDns(selectedAthlete ? dnsSet.has(+selectedAthlete) : false);
+  }, [selectedAthlete, dnsSet]);
 
   const selectedAthObj = athletes.find(a => String(a.id) === selectedAthlete);
   const availableRounds = category ? getRounds(category.rounds) : ['qual'];
@@ -214,18 +242,18 @@ export default function Scoring() {
 
   useEffect(() => {
     if (!catId) return;
-    if (selectedRound === 'qual') {
-      eventsAPI.getAthletes(id, { round: selectedRound }).then(res => {
-        const catAthletes = res.data.filter(a => String(a.category_id) === String(catId));
-        setAthletes(catAthletes);
-        setSelectedAthlete(prev => catAthletes.find(a => String(a.id) === prev) ? prev : '');
-      });
-    } else {
-      eventsAPI.getStartOrder(id, catId, selectedRound).then(res => {
-        setAthletes(res.data);
-        setSelectedAthlete(prev => res.data.find(a => String(a.id) === prev) ? prev : '');
-      });
-    }
+    const loadAthletes = selectedRound === 'qual'
+      ? eventsAPI.getAthletes(id, { round: selectedRound }).then(res => res.data.filter(a => String(a.category_id) === String(catId)))
+      : eventsAPI.getStartOrder(id, catId, selectedRound).then(res => res.data);
+
+    Promise.all([
+      loadAthletes,
+      eventsAPI.getDns(id, selectedRound).catch(() => ({ data: { dns: [] } })),
+    ]).then(([list, dnsRes]) => {
+      setAthletes(list);
+      setSelectedAthlete(prev => list.find(a => String(a.id) === prev) ? prev : '');
+      setDnsSet(new Set(dnsRes.data.dns));
+    });
   }, [id, catId, selectedRound]);
 
   useEffect(() => {
@@ -356,6 +384,22 @@ export default function Scoring() {
           onCancel={() => setResetTarget(null)}
         />
       )}
+      {showDnsModal && selectedAthObj && (
+        <DnsModal
+          name={selectedAthObj.name}
+          onConfirm={async () => {
+            try {
+              await eventsAPI.markDns(id, { athlete_id: +selectedAthlete, round: selectedRound });
+              setDnsSet(prev => new Set([...prev, +selectedAthlete]));
+              setShowDnsModal(false);
+            } catch {
+              toast('標記失敗', 'error');
+              setShowDnsModal(false);
+            }
+          }}
+          onCancel={() => setShowDnsModal(false)}
+        />
+      )}
 
       <div className="flex items-center gap-2 mb-6 text-txt3 font-mono text-xs">
         <Link to="/events" className="hover:text-txt transition-colors">比賽列表</Link>
@@ -384,7 +428,7 @@ export default function Scoring() {
             <option value="">-- 選擇選手 --</option>
             {athletes.map(a => (
               <option key={a.id} value={a.id}>
-                {selectedRound !== 'qual' ? `#${a.startOrder} ` : ''}[{a.bib}] {a.name}
+                {selectedRound !== 'qual' ? `#${a.startOrder} ` : ''}[{a.bib}] {a.name}{dnsSet.has(a.id) ? ' (DNS)' : ''}
               </option>
             ))}
           </select>
@@ -406,7 +450,7 @@ export default function Scoring() {
         </div>
         <button
           onClick={handleSave}
-          disabled={saving || !selectedAthlete || locked}
+          disabled={saving || !selectedAthlete || locked || isDns}
           className="bg-lime text-bg font-condensed font-bold text-xs tracking-widest uppercase px-5 py-[9px] rounded hover:bg-[#b5de25] transition-colors disabled:opacity-40"
         >
           {saving ? '儲存中...' : '💾 儲存成績'}
@@ -415,10 +459,39 @@ export default function Scoring() {
 
       {!selectedAthlete ? (
         <div className="text-txt3 font-mono text-center py-20">請先選擇選手</div>
+      ) : isDns ? (
+        <div className="bg-s1 border border-border rounded-lg p-12 text-center">
+          <div className="font-condensed font-black text-6xl tracking-[0.3em] text-txt3/40 mb-3">DNS</div>
+          <div className="font-mono text-xs text-txt3 mb-6">{selectedAthObj?.name} 本輪棄賽</div>
+          <button
+            onClick={async () => {
+              try {
+                await eventsAPI.cancelDns(id, { athlete_id: +selectedAthlete, round: selectedRound });
+                setDnsSet(prev => { const next = new Set(prev); next.delete(+selectedAthlete); return next; });
+              } catch {
+                toast('取消失敗', 'error');
+              }
+            }}
+            className="border border-cyan/50 text-cyan font-condensed font-bold text-xs tracking-widest uppercase px-5 py-2 rounded hover:bg-cyan/10 transition-colors"
+          >
+            取消 DNS
+          </button>
+        </div>
       ) : (
         <div className="bg-s1 border border-border rounded-lg p-6">
-          <div className="font-condensed font-bold text-sm tracking-widest uppercase text-lime mb-4">
-            {selectedAthObj?.name} — {ROUND_NAMES[selectedRound]}
+          <div className="flex items-center justify-between mb-4">
+            <div className="font-condensed font-bold text-sm tracking-widest uppercase text-lime">
+              {selectedAthObj?.name} — {ROUND_NAMES[selectedRound]}
+            </div>
+            {isAdmin && (
+              <button
+                onClick={() => setShowDnsModal(true)}
+                disabled={locked}
+                className="border border-red/40 text-red font-condensed font-bold text-xs tracking-widest uppercase px-4 py-1.5 rounded hover:bg-red/10 transition-colors disabled:opacity-40"
+              >
+                DNS
+              </button>
+            )}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {boulders.filter(b => selectedBoulder === 'all' || String(b.id) === selectedBoulder).map(b => (

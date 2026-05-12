@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { eventsAPI } from '../api';
@@ -153,13 +153,14 @@ export default function Ranking() {
               <tbody>
                 {(() => {
                   return athletes.map((a, rowIdx) => {
+                    const isDns = !!a.is_dns;
                     const score = calcScore(a.boulderScores);
                     const hasScore = score > 0;
-                    const showCutoff = cutoffRank !== null && a.rank > cutoffRank && (rowIdx === 0 || athletes[rowIdx - 1].rank <= cutoffRank);
+                    const showCutoff = !isDns && cutoffRank !== null && a.rank > cutoffRank && (rowIdx === 0 || athletes[rowIdx - 1].rank <= cutoffRank);
                     return (
-                      <>
+                      <Fragment key={a.id}>
                         {showCutoff && (
-                          <tr key={`cutoff-${a.id}`}>
+                          <tr>
                             <td colSpan={8} className="px-3 py-2">
                               <div className="flex items-center gap-3">
                                 <div className="flex-1 border-t-2 border-[#f5c542]/70" />
@@ -169,14 +170,16 @@ export default function Ranking() {
                             </td>
                           </tr>
                         )}
-                        <tr key={a.id} className="hover:bg-s2 transition-colors">
+                        <tr className="hover:bg-s2 transition-colors">
                           <td className="py-2.5 px-3 font-mono font-bold text-sm">{a.rank}</td>
                           <td className="py-2.5 px-3 font-mono text-xs text-txt3">{a.bib}</td>
                           <td className="py-2.5 px-3 font-bold">{a.name}</td>
                           <td className="py-2.5 px-3">
                             <div className="flex gap-1 items-end">
                               {catBoulders.map((b, i) => {
-                                const bs = a.boulderScores?.[i] || { boulder_id: b.id, top: 0, top_attempts: 0, zone: 0, zone_attempts: 0 };
+                                const bs = isDns
+                                  ? { boulder_id: b.id, top: 0, top_attempts: 0, zone: 0, zone_attempts: 0 }
+                                  : (a.boulderScores?.[i] || { boulder_id: b.id, top: 0, top_attempts: 0, zone: 0, zone_attempts: 0 });
                                 return (
                                   <div key={b.id} className="flex flex-col items-center gap-1">
                                     <BoulderCard b={bs} />
@@ -186,14 +189,17 @@ export default function Ranking() {
                               })}
                             </div>
                           </td>
-                          <td className="py-2.5 px-3 font-mono font-bold text-lime">{a.tops}T</td>
-                          <td className="py-2.5 px-3 font-mono font-bold text-cyan">{a.zones}Z</td>
-                          <td className="py-2.5 px-3 font-mono text-xs text-txt3">{a.tAtt}</td>
-                          <td className="py-2.5 px-3 font-mono font-bold" style={{ color: hasScore ? '#e8e8ec' : '#5a5a6a' }}>
-                            {hasScore ? score.toFixed(1) : '—'}
+                          <td className="py-2.5 px-3 font-mono font-bold text-lime">{isDns ? '—' : `${a.tops}T`}</td>
+                          <td className="py-2.5 px-3 font-mono font-bold text-cyan">{isDns ? '—' : `${a.zones}Z`}</td>
+                          <td className="py-2.5 px-3 font-mono text-xs text-txt3">{isDns ? '—' : a.tAtt}</td>
+                          <td className="py-2.5 px-3 font-mono font-bold">
+                            {isDns
+                              ? <span className="font-condensed font-black text-base tracking-widest text-red/70">DNS</span>
+                              : <span style={{ color: hasScore ? '#e8e8ec' : '#5a5a6a' }}>{hasScore ? score.toFixed(1) : '—'}</span>
+                            }
                           </td>
                         </tr>
-                      </>
+                      </Fragment>
                     );
                   });
                 })()}

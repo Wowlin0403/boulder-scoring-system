@@ -82,6 +82,14 @@ db.exec(`
     updated_by INTEGER REFERENCES users(id),
     UNIQUE(athlete_id, round, boulder_id)
   );
+
+  CREATE TABLE IF NOT EXISTS dns_records (
+    athlete_id INTEGER NOT NULL REFERENCES athletes(id) ON DELETE CASCADE,
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    round TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (athlete_id, event_id, round)
+  );
 `);
 
 // Existing DB migrations
