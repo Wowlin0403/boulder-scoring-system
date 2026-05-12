@@ -484,7 +484,7 @@ router.get('/:id/export/:round', adminOnly, requireEventOwnership, (req, res) =>
       return { ...a, is_dns: false, boulderScores, score: calcScore(boulderScores), tops, zones, tAtt, zAtt };
     });
 
-    assignRanks(scoredAthletes, cmp);
+    assignRanksWithDns(scoredAthletes, cmp, prevRankMap);
 
     // Determine who advances to next round
     let advancingIds = new Set();
