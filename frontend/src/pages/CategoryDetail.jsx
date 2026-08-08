@@ -24,6 +24,7 @@ export default function CategoryDetail() {
     ...(isAdmin ? [{ to: `/events/${id}/categories/${catId}/athletes`, label: '選手名單', desc: '管理報名選手' }] : []),
     { to: `/events/${id}/categories/${catId}/scoring`, label: '裁判計分', desc: '即時輸入成績' },
     { to: `/events/${id}/categories/${catId}/ranking`, label: '即時排名', desc: '查看目前排名' },
+    ...(isAdmin ? [{ to: `/events/${id}/categories/${catId}/settlement`, label: '輪次結算', desc: '確認/調整本輪成績與名次' }] : []),
     ...(isAdmin ? [{ to: `/events/${id}/categories/${catId}/export`, label: '匯出成績', desc: '下載 CSV' }] : []),
     { to: `/public/${id}/ranking`, label: '公開排名', desc: '觀眾顯示頁面', external: true },
   ];

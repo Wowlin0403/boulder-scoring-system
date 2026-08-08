@@ -55,6 +55,12 @@ export const eventsAPI = {
   getDns: (id, round) => api.get(`/events/${id}/dns`, { params: { round } }),
   markDns: (id, data) => api.post(`/events/${id}/dns`, data),
   cancelDns: (id, data) => api.delete(`/events/${id}/dns`, { data }),
+  getLogs: (id, params) => api.get(`/events/${id}/logs`, { params }),
+  overrideRank: (id, round, data) => api.put(`/events/${id}/ranking/${round}/override`, data),
+  guaranteeAdvancement: (id, round, data) => api.put(`/events/${id}/ranking/${round}/guarantee`, data),
+  getSettlement: (id, catId, round) => api.get(`/events/${id}/categories/${catId}/settlement/${round}`),
+  confirmSettlement: (id, catId, round) => api.post(`/events/${id}/categories/${catId}/settlement/${round}`),
+  reopenSettlement: (id, catId, round) => api.delete(`/events/${id}/categories/${catId}/settlement/${round}`),
 };
 
 const publicApi = axios.create({

@@ -1,8 +1,8 @@
 const router = require('express').Router();
 const db = require('../db');
 const { adminOnly, superadminOnly, requireEventOwnership } = require('../middleware/auth');
-const { getAdvancedIds } = require('../utils/advancement');
-const { calcScore, makeCmp, assignRanks, assignRanksWithDns, computeRoundRankMap } = require('../utils/ranking');
+const { getAdvancedIds, getGuaranteedIds } = require('../utils/advancement');
+const { calcScore, makeCmp, assignRanks, assignRanksWithDns, computeRoundRankMap, getRankOverrides, applyRankOverrides } = require('../utils/ranking');
 
 const ROUND_KEYS = ['qual', 'semi', 'final'];
 const LOCK_DAYS = 7;
@@ -27,6 +27,10 @@ function requireUnlocked(req, res, next) {
 function getRounds(n) {
   if (n === 2) return ['qual', 'final'];
   return ['qual', 'semi', 'final'].slice(0, n);
+}
+
+function isRoundSettled(db, categoryId, round) {
+  return !!db.prepare('SELECT 1 FROM round_settlements WHERE category_id = ? AND round = ?').get(categoryId, round);
 }
 
 function createCategoryBoulders(eventId, categoryId, rounds) {
@@ -272,6 +276,12 @@ router.post('/:id/scores', requireUnlocked, (req, res) => {
   if (!athlete_id || !round || !Array.isArray(scores)) return res.status(400).json({ error: '資料格式錯誤' });
   if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
 
+  const athlete = db.prepare('SELECT category_id FROM athletes WHERE id = ? AND event_id = ?').get(athlete_id, req.params.id);
+  if (!athlete) return res.status(404).json({ error: '選手不存在' });
+  if (req.user.role !== 'superadmin' && isRoundSettled(db, athlete.category_id, round)) {
+    return res.status(423).json({ error: '本輪已結算，請先取消結算才能修改成績' });
+  }
+
   const upsert = db.prepare(`
     INSERT INTO scores (athlete_id, event_id, round, boulder_id, top, top_attempts, zone, zone_attempts, attempts, updated_at, updated_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
@@ -281,7 +291,6 @@ router.post('/:id/scores', requireUnlocked, (req, res) => {
       attempts=excluded.attempts,
       updated_at=excluded.updated_at, updated_by=excluded.updated_by
   `);
-
   db.transaction(items => {
     for (const s of items) {
       upsert.run(athlete_id, req.params.id, round, s.boulder_id, s.top ? 1 : 0, s.top_attempts || 0, s.zone ? 1 : 0, s.zone_attempts || 0, s.attempts || 0, req.user.id);
@@ -289,6 +298,26 @@ router.post('/:id/scores', requireUnlocked, (req, res) => {
   })(scores);
 
   res.json({ ok: true });
+});
+
+// ── Score Logs ───────────────────────────────────────────────────────────────
+
+router.get('/:id/logs', adminOnly, requireEventOwnership, (req, res) => {
+  const { round, category_id, athlete_id } = req.query;
+  let sql = `
+    SELECT sl.*, a.name as athlete_name, a.bib, a.category_id, b.label as boulder_label, u.username as changed_by_name
+    FROM score_logs sl
+    JOIN athletes a ON sl.athlete_id = a.id
+    JOIN boulders b ON sl.boulder_id = b.id
+    LEFT JOIN users u ON sl.changed_by = u.id
+    WHERE sl.event_id = ?
+  `;
+  const params = [req.params.id];
+  if (round) { sql += ' AND sl.round = ?'; params.push(round); }
+  if (category_id) { sql += ' AND a.category_id = ?'; params.push(category_id); }
+  if (athlete_id) { sql += ' AND sl.athlete_id = ?'; params.push(athlete_id); }
+  sql += ' ORDER BY sl.changed_at DESC, sl.id DESC LIMIT 500';
+  res.json(db.prepare(sql).all(...params));
 });
 
 
@@ -353,23 +382,118 @@ router.get('/:id/ranking/:round', (req, res) => {
     }
   });
 
+  const overrides = getRankOverrides(db, id, round);
+
   const result = [];
   Object.entries(byCategory).forEach(([catId, group]) => {
     const cmp = makeCmp(prevRankMaps[catId] || null);
     assignRanksWithDns(group, cmp, prevRankMaps[catId] || null);
+    applyRankOverrides(group, overrides);
     group.forEach(a => result.push(a));
   });
 
   const quotas = {};
+  const nextRounds = new Set();
   activeCats.forEach(c => {
     const catRoundsArr = getRounds(c.rounds);
     const nextRound = catRoundsArr[catRoundsArr.indexOf(round) + 1];
     if (nextRound === 'semi') quotas[c.id] = c.semi_quota || 0;
     else if (nextRound === 'final') quotas[c.id] = c.final_quota || 0;
     else quotas[c.id] = 0;
+    if (nextRound) nextRounds.add(nextRound);
   });
 
-  res.json({ athletes: result, bouldersMap, total: athletes.length, scored: athletes.filter(a => scoreMap[a.id]).length, quotas });
+  const advancingIds = new Set();
+  nextRounds.forEach(nr => {
+    const ids = getAdvancedIds(db, id, nr);
+    if (ids) ids.forEach(aid => advancingIds.add(aid));
+  });
+  const guaranteedIds = getGuaranteedIds(db, id, round);
+
+  res.json({
+    athletes: result, bouldersMap, total: athletes.length, scored: athletes.filter(a => scoreMap[a.id]).length, quotas,
+    advancingIds: [...advancingIds], guaranteedIds: [...guaranteedIds],
+  });
+});
+
+// ── Rank Override ──────────────────────────────────────────────────────────
+
+router.put('/:id/ranking/:round/override', adminOnly, requireEventOwnership, (req, res) => {
+  const { round } = req.params;
+  const { athlete_id, rank } = req.body;
+  if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
+  if (!athlete_id) return res.status(400).json({ error: '需提供 athlete_id' });
+
+  const athlete = db.prepare('SELECT category_id FROM athletes WHERE id = ? AND event_id = ?').get(athlete_id, req.params.id);
+  if (!athlete) return res.status(404).json({ error: '選手不存在' });
+  if (req.user.role !== 'superadmin' && isRoundSettled(db, athlete.category_id, round)) {
+    return res.status(423).json({ error: '本輪已結算，請先取消結算才能調整名次' });
+  }
+
+  if (rank == null) {
+    db.prepare('DELETE FROM rank_overrides WHERE athlete_id = ? AND round = ?').run(athlete_id, round);
+  } else {
+    db.prepare(`
+      INSERT INTO rank_overrides (event_id, athlete_id, round, rank, created_by) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(athlete_id, round) DO UPDATE SET rank=excluded.rank, created_by=excluded.created_by, created_at=datetime('now')
+    `).run(req.params.id, athlete_id, round, rank, req.user.id);
+  }
+  res.json({ ok: true });
+});
+
+// ── Guaranteed Advancement ───────────────────────────────────────────────────
+
+router.put('/:id/ranking/:round/guarantee', adminOnly, requireEventOwnership, (req, res) => {
+  const { round } = req.params;
+  const { athlete_id, guaranteed } = req.body;
+  if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
+  if (!athlete_id) return res.status(400).json({ error: '需提供 athlete_id' });
+
+  const athlete = db.prepare('SELECT category_id FROM athletes WHERE id = ? AND event_id = ?').get(athlete_id, req.params.id);
+  if (!athlete) return res.status(404).json({ error: '選手不存在' });
+  if (req.user.role !== 'superadmin' && isRoundSettled(db, athlete.category_id, round)) {
+    return res.status(423).json({ error: '本輪已結算，請先取消結算才能調整保障晉級' });
+  }
+
+  if (guaranteed) {
+    db.prepare(`
+      INSERT INTO guaranteed_advancements (event_id, athlete_id, round, created_by) VALUES (?, ?, ?, ?)
+      ON CONFLICT(athlete_id, round) DO UPDATE SET created_by=excluded.created_by, created_at=datetime('now')
+    `).run(req.params.id, athlete_id, round, req.user.id);
+  } else {
+    db.prepare('DELETE FROM guaranteed_advancements WHERE athlete_id = ? AND round = ?').run(athlete_id, round);
+  }
+  res.json({ ok: true });
+});
+
+// ── Round Settlement ─────────────────────────────────────────────────────────
+
+router.get('/:id/categories/:catId/settlement/:round', (req, res) => {
+  const { round } = req.params;
+  if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
+  const row = db.prepare(`
+    SELECT rs.settled_at, u.username as settled_by_name
+    FROM round_settlements rs LEFT JOIN users u ON rs.settled_by = u.id
+    WHERE rs.category_id = ? AND rs.round = ?
+  `).get(req.params.catId, round);
+  res.json({ settled: !!row, settledAt: row?.settled_at || null, settledBy: row?.settled_by_name || null });
+});
+
+router.post('/:id/categories/:catId/settlement/:round', adminOnly, requireEventOwnership, (req, res) => {
+  const { round } = req.params;
+  if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
+  db.prepare(`
+    INSERT INTO round_settlements (event_id, category_id, round, settled_by) VALUES (?, ?, ?, ?)
+    ON CONFLICT(category_id, round) DO UPDATE SET settled_by=excluded.settled_by, settled_at=datetime('now')
+  `).run(req.params.id, req.params.catId, round, req.user.id);
+  res.json({ ok: true });
+});
+
+router.delete('/:id/categories/:catId/settlement/:round', adminOnly, requireEventOwnership, (req, res) => {
+  const { round } = req.params;
+  if (!ROUND_KEYS.includes(round)) return res.status(400).json({ error: '無效輪次' });
+  db.prepare('DELETE FROM round_settlements WHERE category_id = ? AND round = ?').run(req.params.catId, round);
+  res.json({ ok: true });
 });
 
 // ── DNS ──────────────────────────────────────────────────────────────────────
@@ -485,6 +609,7 @@ router.get('/:id/export/:round', adminOnly, requireEventOwnership, (req, res) =>
     });
 
     assignRanksWithDns(scoredAthletes, cmp, prevRankMap);
+    applyRankOverrides(scoredAthletes, getRankOverrides(db, id, round));
 
     // Determine who advances to next round
     let advancingIds = new Set();

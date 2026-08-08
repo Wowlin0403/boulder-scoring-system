@@ -1,8 +1,13 @@
-const { calcScore } = require('./ranking');
+const { calcScore, getRankOverrides, applyRankOverrides } = require('./ranking');
 
 function getRounds(n) {
   if (n === 2) return ['qual', 'final'];
   return ['qual', 'semi', 'final'].slice(0, n);
+}
+
+function getGuaranteedIds(db, eventId, round) {
+  const rows = db.prepare('SELECT athlete_id FROM guaranteed_advancements WHERE event_id = ? AND round = ?').all(eventId, round);
+  return new Set(rows.map(r => r.athlete_id));
 }
 
 function getAdvancedIds(db, eventId, toRound) {
@@ -76,20 +81,37 @@ function getAdvancedIds(db, eventId, toRound) {
     });
 
     ranked.sort((a, b) => b.score - a.score);
+    ranked.forEach((a, i) => {
+      a.rank = (i > 0 && Math.abs(ranked[i - 1].score - a.score) < 1e-9) ? ranked[i - 1].rank : i + 1;
+    });
+    applyRankOverrides(ranked, getRankOverrides(db, eventId, fromRound));
 
     if (!quota || ranked.length <= quota) {
       ranked.forEach(a => advancedIds.add(a.id));
       return;
     }
 
-    const cutoffScore = ranked[quota - 1].score;
-    for (const a of ranked) {
-      if (a.score >= cutoffScore) advancedIds.add(a.id);
-      else break;
+    const cutoffRank = ranked[quota - 1].rank;
+    let qualifying = ranked.filter(a => a.rank <= cutoffRank);
+
+    // Guaranteed advancement: swap a flagged athlete into the qualifying set by
+    // bumping the worst-ranked non-guaranteed qualifier. DNS'd athletes were
+    // already excluded from `catGroup`/`ranked` above, so they can never be
+    // pulled in here even if flagged.
+    const guaranteedSet = getGuaranteedIds(db, eventId, fromRound);
+    const qualifyingIds = new Set(qualifying.map(a => a.id));
+    const guaranteedNotIn = ranked.filter(a => guaranteedSet.has(a.id) && !qualifyingIds.has(a.id));
+
+    if (guaranteedNotIn.length > 0) {
+      const removable = qualifying.filter(a => !guaranteedSet.has(a.id)).sort((a, b) => b.rank - a.rank);
+      const removeIds = new Set(removable.slice(0, guaranteedNotIn.length).map(a => a.id));
+      qualifying = qualifying.filter(a => !removeIds.has(a.id)).concat(guaranteedNotIn);
     }
+
+    qualifying.forEach(a => advancedIds.add(a.id));
   });
 
   return advancedIds;
 }
 
-module.exports = { getAdvancedIds };
+module.exports = { getAdvancedIds, getGuaranteedIds };

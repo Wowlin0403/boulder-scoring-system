@@ -10,6 +10,7 @@ import Athletes from './pages/Athletes';
 import Scoring from './pages/Scoring';
 import Ranking from './pages/Ranking';
 import Export from './pages/Export';
+import Settlement from './pages/Settlement';
 import PublicRanking from './pages/PublicRanking';
 import AccountManagement from './pages/AccountManagement';
 import JudgeAccount from './pages/JudgeAccount';
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/events/:id/categories/:catId/scoring" element={<PrivateRoute><Scoring /></PrivateRoute>} />
           <Route path="/events/:id/categories/:catId/ranking" element={<PrivateRoute><Ranking /></PrivateRoute>} />
           <Route path="/events/:id/categories/:catId/export" element={<PrivateRoute requireAdmin><Export /></PrivateRoute>} />
+          <Route path="/events/:id/categories/:catId/settlement" element={<PrivateRoute requireAdmin><Settlement /></PrivateRoute>} />
           <Route path="/admin/accounts" element={<PrivateRoute requireSuperadmin><AccountManagement /></PrivateRoute>} />
           <Route path="/public/:id/ranking" element={<PublicRanking />} />
           <Route path="*" element={<Navigate to="/events" replace />} />

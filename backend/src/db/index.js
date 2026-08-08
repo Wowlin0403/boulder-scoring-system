@@ -90,6 +90,49 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now')),
     PRIMARY KEY (athlete_id, event_id, round)
   );
+
+  CREATE TABLE IF NOT EXISTS score_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    athlete_id INTEGER NOT NULL REFERENCES athletes(id) ON DELETE CASCADE,
+    round TEXT NOT NULL,
+    boulder_id INTEGER NOT NULL REFERENCES boulders(id) ON DELETE CASCADE,
+    top INTEGER NOT NULL DEFAULT 0,
+    top_attempts INTEGER NOT NULL DEFAULT 0,
+    zone INTEGER NOT NULL DEFAULT 0,
+    zone_attempts INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    changed_by INTEGER REFERENCES users(id),
+    changed_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS rank_overrides (
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    athlete_id INTEGER NOT NULL REFERENCES athletes(id) ON DELETE CASCADE,
+    round TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (athlete_id, round)
+  );
+
+  CREATE TABLE IF NOT EXISTS round_settlements (
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    round TEXT NOT NULL,
+    settled_by INTEGER REFERENCES users(id),
+    settled_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (category_id, round)
+  );
+
+  CREATE TABLE IF NOT EXISTS guaranteed_advancements (
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    athlete_id INTEGER NOT NULL REFERENCES athletes(id) ON DELETE CASCADE,
+    round TEXT NOT NULL,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (athlete_id, round)
+  );
 `);
 
 // Existing DB migrations

@@ -34,6 +34,25 @@ function assignRanks(group, cmp) {
   }
 }
 
+// Rank overrides let an admin manually pin an athlete's final rank for a round;
+// downstream consumers (ranking display, export, advancement) must all read
+// through this so the override is reflected everywhere consistently.
+function getRankOverrides(db, eventId, round) {
+  const rows = db.prepare('SELECT athlete_id, rank FROM rank_overrides WHERE event_id = ? AND round = ?').all(eventId, round);
+  const map = {};
+  rows.forEach(r => { map[r.athlete_id] = r.rank; });
+  return map;
+}
+
+function applyRankOverrides(group, overridesMap) {
+  if (!overridesMap) return;
+  let changed = false;
+  group.forEach(a => {
+    if (overridesMap[a.id] != null) { a.rank = overridesMap[a.id]; changed = true; }
+  });
+  if (changed) group.sort((a, b) => a.rank - b.rank);
+}
+
 // Recursively compute { [athleteId]: rank } for a round, using prev round as tiebreaker
 function computeRoundRankMap(db, eventId, catId, round, catRoundsArr) {
   const idx = catRoundsArr.indexOf(round);
@@ -68,6 +87,7 @@ function computeRoundRankMap(db, eventId, catId, round, catRoundsArr) {
 
   const cmp = makeCmp(prevRankMap);
   assignRanks(data, cmp);
+  applyRankOverrides(data, getRankOverrides(db, eventId, round));
 
   const rankMap = {};
   data.forEach(a => { rankMap[a.id] = a.rank; });
@@ -104,4 +124,4 @@ function assignRanksWithDns(group, cmp, prevRankMap) {
   for (let i = 0; i < sorted.length; i++) group[i] = sorted[i];
 }
 
-module.exports = { getRounds, calcScore, makeCmp, assignRanks, assignRanksWithDns, computeRoundRankMap };
+module.exports = { getRounds, calcScore, makeCmp, assignRanks, assignRanksWithDns, computeRoundRankMap, getRankOverrides, applyRankOverrides };
